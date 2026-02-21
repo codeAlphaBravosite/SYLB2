@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover,user-scalable=no"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Syllabus Tracker"/>
+  <meta name="theme-color" content="#007AFF"/>
+  <meta name="description" content="Track your exam syllabus with spaced repetition"/>
+  <title>Syllabus Tracker</title>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="apple-touch-icon" href="apple-touch-icon.png"/>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23007AFF'/><rect x='22' y='20' width='26' height='60' rx='4' fill='white'/><rect x='52' y='20' width='26' height='60' rx='4' fill='white'/><rect x='47' y='20' width='6' height='60' fill='%23007AFF'/></svg>"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    html,body,#root{height:100%;overscroll-behavior:none;}
+    body{background:#007AFF;font-family:system-ui,sans-serif;}
+    #splash{position:fixed;inset:0;background:#007AFF;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;z-index:9999;transition:opacity .35s ease;}
+    #splash.out{opacity:0;pointer-events:none;}
+    #splash svg{animation:pulse 1.3s ease-in-out infinite;}
+    #splash p{color:rgba(255,255,255,.75);font-size:15px;margin-top:18px;letter-spacing:.3px;}
+    @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+  </style>
+</head>
+<body>
+<div id="splash">
+  <svg width="88" height="88" viewBox="0 0 100 100" fill="none">
+    <rect width="100" height="100" rx="22" fill="rgba(255,255,255,.18)"/>
+    <rect x="22" y="20" width="26" height="60" rx="4" fill="white"/>
+    <rect x="52" y="20" width="26" height="60" rx="4" fill="white"/>
+    <rect x="47" y="20" width="6" height="60" fill="#007AFF"/>
+  </svg>
+  <p>Syllabus Tracker</p>
+</div>
+<div id="root"></div>
+
+<!-- React 18 — no JSX compiler needed, plain JS -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script>
+// Bring React hooks into global scope (UMD build)
+const { useState, useEffect, useRef, useCallback, useMemo, memo } = React;
+
+// Register service worker for offline PWA
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () =>
+    navigator.serviceWorker.register('./sw.js')
+      .catch(e => console.warn('[SW]', e))
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════
+   GLOBAL STYLES
+═══════════════════════════════════════════════════════ */
+const G = () => (
+  React.createElement("style",null,`
+    @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&display=swap');
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+    html,body{font-family:'Geist',system-ui,sans-serif;overscroll-behavior:none;-webkit-text-size-adjust:100%;}
+    button,input,textarea,select{font-family:'Geist',system-ui,sans-serif;}
+    ::-webkit-scrollbar{display:none;}
+    button{-webkit-appearance:none;appearance:none;}
+    input,textarea{-webkit-appearance:none;appearance:none;border-radius:0;}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  `)
+);
+
+/* ═══════════════════════════════════════════════════════
+   ICONS  — paths defined OUTSIDE component (static, never recreated)
+═══════════════════════════════════════════════════════ */
+// Each entry is a render function to avoid creating JSX at module load
+const IC = {
+  home:     p=>React.createElement(React.Fragment,null,React.createElement("path",{...p,d:"M3 10.5L12 3l9 7.5V20a1 1 0 01-1 1H14v-5h-4v5H4a1 1 0 01-1-1z"})),
+  book:     p=>React.createElement(React.Fragment,null,React.createElement("path",{...p,d:"M4 19.5A2.5 2.5 0 016.5 17H20"}),React.createElement("path",{...p,d:"M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"})),
+  refresh:  p=>React.createElement(React.Fragment,null,React.createElement("path",{...p,d:"M2 12a10 10 0 1010-10c-2.76 0-5.26 1.12-7.07 2.93L2 8"}),React.createElement("path",{...p,d:"M2 2v6h6"})),
+  chart:    p=>React.createElement(React.Fragment,null,React.createElement("line",{...p,x1:"18",y1:"20",x2:"18",y2:"10"}),React.createElement("line",{...p,x1:"12",y1:"20",x2:"12",y2:"4"}),React.createElement("line",{...p,x1:"6",y1:"20",x2:"6",y2:"14"})),
+  cog:      p=>React.createElement(React.Fragment,null,React.createElement("circle",{...p,cx:"12",cy:"12",r:"3"}),React.createElement("path",{...p,d:"M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"})),
+  plus:     p=>React.createElement(React.Fragment,null,React.createElement("line",{...p,x1:"12",y1:"5",x2:"12",y2:"19"}),React.createElement("line",{...p,x1:"5",y1:"12",x2:"19",y2:"12"})),
+  chevR:    p=>React.createElement(React.Fragment,null,React.createElement("polyline",{...p,points:"9 18 15 12 9 6"})),
+  chevD:    p=>React.createElement(React.Fragment,null,React.createElement("polyline",{...p,points:"6 9 12 15 18 9"})),
+  trash:    p=>React.createElement(React.Fragment,null,React.createElement("polyline",{...p,points:"3 6 5 6 21 6"}),React.createElement("path",{...p,d:"M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"}),React.createElement("path",{...p,d:"M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"})),
+  check:    p=>React.createElement(React.Fragment,null,React.createElement("polyline",{...p,points:"20 6 9 17 4 12"})),
+  edit:     p=>React.createElement(React.Fragment,null,React.createElement("path",{...p,d:"M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"}),React.createElement("path",{...p,d:"M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"})),
+  close:    p=>React.createElement(React.Fragment,null,React.createElement("line",{...p,x1:"18",y1:"6",x2:"6",y2:"18"}),React.createElement("line",{...p,x1:"6",y1:"6",x2:"18",y2:"18"})),
+  sun:      p=>React.createElement(React.Fragment,null,React.createElement("circle",{...p,cx:"12",cy:"12",r:"5"}),React.createElement("line",{...p,x1:"12",y1:"1",x2:"12",y2:"3"}),React.createElement("line",{...p,x1:"12",y1:"21",x2:"12",y2:"23"}),React.createElement("line",{...p,x1:"4.22",y1:"4.22",x2:"5.64",y2:"5.64"}),React.createElement("line",{...p,x1:"18.36",y1:"18.36",x2:"19.78",y2:"19.78"}),React.createElement("line",{...p,x1:"1",y1:"12",x2:"3",y2:"12"}),React.createElement("line",{...p,x1:"21",y1:"12",x2:"23",y2:"12"}),React.createElement("line",{...p,x1:"4.22",y1:"19.78",x2:"5.64",y2:"18.36"}),React.createElement("line",{...p,x1:"18.36",y1:"5.64",x2:"19.78",y2:"4.22"})),
+  moon:     p=>React.createElement(React.Fragment,null,React.createElement("path",{...p,d:"M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"})),
+  download: p=>React.createElement(React.Fragment,null,React.createElement("path",{...p,d:"M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"}),React.createElement("polyline",{...p,points:"7 10 12 15 17 10"}),React.createElement("line",{...p,x1:"12",y1:"15",x2:"12",y2:"3"})),
+  upload:   p=>React.createElement(React.Fragment,null,React.createElement("path",{...p,d:"M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"}),React.createElement("polyline",{...p,points:"17 8 12 3 7 8"}),React.createElement("line",{...p,x1:"12",y1:"3",x2:"12",y2:"15"})),
+  clock:    p=>React.createElement(React.Fragment,null,React.createElement("circle",{...p,cx:"12",cy:"12",r:"10"}),React.createElement("polyline",{...p,points:"12 6 12 12 16 14"})),
+  flag:     p=>React.createElement(React.Fragment,null,React.createElement("path",{...p,d:"M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"}),React.createElement("line",{...p,x1:"4",y1:"22",x2:"4",y2:"15"})),
+  link:     p=>React.createElement(React.Fragment,null,React.createElement("path",{...p,d:"M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"}),React.createElement("path",{...p,d:"M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"})),
+  warn:     p=>React.createElement(React.Fragment,null,React.createElement("path",{...p,d:"M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"}),React.createElement("line",{...p,x1:"12",y1:"9",x2:"12",y2:"13"}),React.createElement("line",{...p,x1:"12",y1:"17",x2:"12.01",y2:"17"})),
+  search:   p=>React.createElement(React.Fragment,null,React.createElement("circle",{...p,cx:"11",cy:"11",r:"8"}),React.createElement("line",{...p,x1:"21",y1:"21",x2:"16.65",y2:"16.65"})),
+};
+
+const Ic = memo(({ n, size = 22, color = "currentColor", sw = 1.8 }) => {
+  const p = useMemo(
+    () => ({ fill:"none", stroke:color, strokeWidth:sw, strokeLinecap:"round", strokeLinejoin:"round" }),
+    [color, sw]
+  );
+  return (
+    React.createElement("svg",{viewBox:"0 0 24 24",width:size,height:size,"aria-hidden":"true",style:{ display:"block", flexShrink:0 }},IC[n]?.(p))
+  );
+});
+
+/* ═══════════════════════════════════════════════════════
+   CONFIG
+═══════════════════════════════════════════════════════ */
+const STATUS = {
+  "not-started":{ label:"Not Started", color:"#8E8E93", bg:"#8E8E9322" },
+  "studying":   { label:"Studying",    color:"#FF9500", bg:"#FF950022" },
+  "studied":    { label:"Studied",     color:"#34C759", bg:"#34C75922" },
+  "do-revision":{ label:"Do Revision", color:"#FF3B30", bg:"#FF3B3022" },
+};
+const PRIORITY = {
+  "high":     { label:"High Weightage", color:"#FF3B30", bg:"#FF3B3018" },
+  "normal":   { label:"Normal",         color:"#007AFF", bg:"#007AFF18" },
+  "optional": { label:"Optional",       color:"#8E8E93", bg:"#8E8E9318" },
+};
+const COLORS   = ["#007AFF","#FF3B30","#34C759","#FF9500","#AF52DE","#5AC8FA","#FF2D55","#00C7BE","#FF6B00","#636366"];
+const REV_DAYS = 7;
+const PRI_ORD  = { high:3, normal:2, optional:1 };
+
+/* ═══════════════════════════════════════════════════════
+   UTILS
+═══════════════════════════════════════════════════════ */
+const uid    = () => Math.random().toString(36).slice(2,9);
+const toDay  = () => new Date().toISOString().split("T")[0];
+const daysTo = d  => d ? Math.ceil((new Date(d)-new Date())/86400000) : null;
+
+const phaseOf = d => {
+  if (d==null) return null;
+  if (d>60) return { label:"Learning Phase", color:"#007AFF" };
+  if (d>30) return { label:"Consolidation",  color:"#FF9500" };
+  if (d>14) return { label:"Revision Mode",  color:"#AF52DE" };
+  return          { label:"Final Sprint",    color:"#FF3B30" };
+};
+
+const isDue = t => {
+  if (t.status!=="studied"||!t.studiedDate) return false;
+  const due = new Date(t.studiedDate);
+  due.setDate(due.getDate()+REV_DAYS);
+  return new Date()>=due;
+};
+
+const pct = topics => {
+  if (!topics.length) return 0;
+  return Math.round(topics.filter(t=>t.status==="studied"||t.status==="do-revision").length/topics.length*100);
+};
+
+const flatAll = subjects =>
+  subjects.flatMap(s=>s.chapters.flatMap(c=>c.topics.map(t=>({
+    ...t,
+    subjectId:s.id, subjectName:s.name, subjectColor:s.color,
+    chapterId:c.id, chapterName:c.name,
+  }))));
+
+/* ═══════════════════════════════════════════════════════
+   STORE  — debounced persist, stable listeners
+═══════════════════════════════════════════════════════ */
+const KEY  = "st_v9";
+const INIT = { onboarded:false, profile:{ examName:"", examDate:"" }, subjects:[], settings:{ dark:false } };
+
+const safeParse = raw => {
+  try {
+    const d = JSON.parse(raw);
+    if (!d||typeof d!=="object") return INIT;
+    return { ...INIT, ...d, settings:{ ...INIT.settings, ...(d.settings||{}) } };
+  } catch { return INIT; }
+};
+
+let _st = safeParse(localStorage.getItem(KEY)||"");
+let _ls = new Set();
+let _pt = null; // persist timer
+
+const useStore = () => {
+  const [, tick] = useState(0);
+  useEffect(()=>{
+    const fn = ()=>tick(n=>n+1);
+    _ls.add(fn);
+    return ()=>_ls.delete(fn);
+  },[]);
+  return _st;
+};
+
+const dispatch = fn => {
+  _st = fn(_st);
+  clearTimeout(_pt);
+  _pt = setTimeout(()=>{ try{ localStorage.setItem(KEY,JSON.stringify(_st)); }catch{} }, 300);
+  _ls.forEach(f=>f());
+};
+
+// Shared status updater — studiedDate logic corrected
+const setStatus = (subId,chId,tId,status) =>
+  dispatch(st=>({
+    ...st,
+    subjects:st.subjects.map(sub=>sub.id!==subId?sub:{
+      ...sub,
+      chapters:sub.chapters.map(ch=>ch.id!==chId?ch:{
+        ...ch,
+        topics:ch.topics.map(t=>t.id!==tId?t:{
+          ...t, status,
+          studiedDate: status==="studied" ? toDay() : null,
+        }),
+      }),
+    }),
+  }));
+
+/* ═══════════════════════════════════════════════════════
+   THEME  — stable object per dark value (cached)
+═══════════════════════════════════════════════════════ */
+const themes = {
+  light: {
+    bg:"#F2F2F7",card:"#FFFFFF",card2:"#F2F2F7",card3:"#E5E5EA",
+    text:"#000000",text2:"#6C6C70",text3:"#C7C7CC",sep:"#E5E5EA",
+    nav:"rgba(255,255,255,.92)",blue:"#007AFF",red:"#FF3B30",
+    green:"#34C759",orange:"#FF9500",purple:"#AF52DE",
+  },
+  dark: {
+    bg:"#000000",card:"#1C1C1E",card2:"#2C2C2E",card3:"#3A3A3C",
+    text:"#FFFFFF",text2:"#8E8E93",text3:"#48484A",sep:"#2C2C2E",
+    nav:"rgba(0,0,0,.92)",blue:"#007AFF",red:"#FF3B30",
+    green:"#34C759",orange:"#FF9500",purple:"#AF52DE",
+  },
+};
+const T = dark => dark ? themes.dark : themes.light;
+
+/* ═══════════════════════════════════════════════════════
+   PRIMITIVES
+═══════════════════════════════════════════════════════ */
+const Ring = memo(({ value, color="#007AFF", size=54, sw=5 })=>{
+  const r = (size-sw*2)/2, circ = 2*Math.PI*r;
+  return(
+    React.createElement("svg",{width:size,height:size,"aria-hidden":"true",style:{ flexShrink:0, transform:"rotate(-90deg)" }},React.createElement("circle",{cx:size/2,cy:size/2,r:r,fill:"none",stroke:color+"30",strokeWidth:sw}),React.createElement("circle",{cx:size/2,cy:size/2,r:r,fill:"none",stroke:color,strokeWidth:sw,strokeDasharray:circ,strokeDashoffset:circ*(1-value/100),strokeLinecap:"round",style:{ transition:"stroke-dashoffset .6s ease" }}))
+  );
+});
+
+const Bar = memo(({ value, color="#007AFF", h=4, C })=>(
+  React.createElement("div",{style:{ background:C?C.card3:"#E5E5EA", borderRadius:99, height:h, overflow:"hidden" }},React.createElement("div",{style:{ width:`${value}%`, background:color, height:"100%", borderRadius:99, transition:"width .5s ease" }}))
+));
+
+const Badge = memo(({ label, color, bg })=>(
+  React.createElement("span",{style:{ fontSize:12, fontWeight:600, color, background:bg, padding:"4px 10px", borderRadius:99, whiteSpace:"nowrap", display:"inline-block" }},label)
+));
+
+/* Two-stage delete — no confirm() */
+const DelBtn = memo(({ onDelete, size=18 })=>{
+  const [armed, setArmed] = useState(false);
+  const timer = useRef(null);
+
+  const arm = e=>{ e.stopPropagation(); setArmed(true); timer.current=setTimeout(()=>setArmed(false),3000); };
+  const fire= e=>{ e.stopPropagation(); clearTimeout(timer.current); setArmed(false); onDelete(); };
+  const off = e=>{ e.stopPropagation(); clearTimeout(timer.current); setArmed(false); };
+  useEffect(()=>()=>clearTimeout(timer.current),[]);
+
+  if(armed) return(
+    React.createElement("div",{style:{ display:"flex", gap:6 },onClick:e=>e.stopPropagation()},React.createElement("button",{onClick:fire,style:{ padding:"6px 14px", background:"#FF3B30", color:"#fff", border:"none", borderRadius:8, fontSize:13, fontWeight:600, cursor:"pointer", minHeight:36 }},"Delete"),React.createElement("button",{onClick:off,style:{ padding:"6px 12px", background:"transparent", color:"#8E8E93", border:"1px solid #C7C7CC", borderRadius:8, fontSize:13, cursor:"pointer", minHeight:36 }},"Cancel"))
+  );
+  return(
+    React.createElement("button",{onClick:arm,style:{ background:"transparent", border:"none", cursor:"pointer", padding:8, display:"flex", alignItems:"center", borderRadius:8, minHeight:44, minWidth:44, justifyContent:"center" }},React.createElement(Ic,{n:"trash",size:size,color:"#8E8E93",sw:1.6}))
+  );
+});
+
+/* ═══════════════════════════════════════════════════════
+   BOTTOM SHEET
+   KEY FIX: No focus trap (breaks mobile keyboard).
+   Escape handled via a ref so handler is always fresh
+   without the effect depending on onClose.
+═══════════════════════════════════════════════════════ */
+const Sheet = memo(({ open, onClose, title, children, C })=>{
+  const onCloseRef = useRef(onClose);
+  useEffect(()=>{ onCloseRef.current = onClose; });          // always fresh, no dep issues
+
+  useEffect(()=>{
+    if(!open) return;
+    const esc = e=>{ if(e.key==="Escape") onCloseRef.current?.(); };
+    document.addEventListener("keydown",esc);
+    return ()=>document.removeEventListener("keydown",esc);
+  },[open]);                                                 // only [open] — stable
+
+  if(!open) return null;
+  return(
+    React.createElement("div",{style:{ position:"fixed", inset:0, zIndex:500, display:"flex", flexDirection:"column", justifyContent:"flex-end" },onClick:onClose},React.createElement("div",{style:{ position:"absolute", inset:0, background:"rgba(0,0,0,.55)", animation:"fadeIn .2s ease" }}),React.createElement("div",{role:"dialog","aria-modal":"true","aria-label":title,onClick:e=>e.stopPropagation(),style:{ position:"relative", background:C.card, borderRadius:"22px 22px 0 0",
+          maxHeight:"90vh", overflowY:"auto", animation:"sheetUp .28s ease",
+          paddingBottom:"env(safe-area-inset-bottom,0px)" }},React.createElement("div",{style:{ display:"flex", justifyContent:"center", padding:"14px 0 0" },"aria-hidden":"true"},React.createElement("div",{style:{ width:36, height:4, borderRadius:99, background:C.card3 }})),React.createElement("div",{style:{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 22px 0" }},React.createElement("span",{style:{ fontSize:18, fontWeight:700, color:C.text }},title),React.createElement("button",{onClick:onClose,"aria-label":"Close",style:{ background:C.card2, border:"none", borderRadius:"50%", width:34, height:34,
+              display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }},React.createElement(Ic,{n:"close",size:14,color:C.text2,sw:2}))),React.createElement("div",{style:{ padding:"20px 22px 32px" }},children)))
+  );
+});
+
+/* ═══════════════════════════════════════════════════════
+   FORM HELPERS
+═══════════════════════════════════════════════════════ */
+const Fld = ({ label, children, C })=>(
+  React.createElement("div",{style:{ marginBottom:20 }},React.createElement("div",{style:{ fontSize:11, fontWeight:700, color:C.text2, letterSpacing:.6, textTransform:"uppercase", marginBottom:10 }},label),children)
+);
+
+// Controlled input — does NOT dispatch on change; parent manages state
+const Inp = ({ C, style:s={}, ...rest })=>(
+  React.createElement("input",{...rest,style:{ width:"100%", padding:"14px 16px", borderRadius:14, border:`1.5px solid ${C.sep}`,
+      fontSize:16, background:C.card2, color:C.text, outline:"none",
+      WebkitAppearance:"none", ...s }})
+);
+
+/* ═══════════════════════════════════════════════════════
+   STATUS PILL ROW
+═══════════════════════════════════════════════════════ */
+const StatusRow = memo(({ currentStatus, isRevDue, onChange, C })=>{
+  const eff = isRevDue ? "do-revision" : currentStatus;
+  return(
+    React.createElement("div",{style:{ display:"flex", gap:6, flexWrap:"wrap", paddingTop:12, borderTop:`1px solid ${C.sep}` }},Object.entries(STATUS).map(([k,v])=>{
+        const active = eff===k;
+        return(
+          React.createElement("button",{key:k,onClick:e=>{ e.stopPropagation(); onChange(k); },style:{ padding:"7px 13px", borderRadius:99, fontSize:12, fontWeight:600,
+              cursor:"pointer", border:`1.5px solid ${active?v.color:C.sep}`,
+              background:active?v.color:"transparent", color:active?"#fff":C.text2,
+              transition:"all .15s", whiteSpace:"nowrap", minHeight:36 }},v.label)
+        );
+      }))
+  );
+});
+
+/* ═══════════════════════════════════════════════════════
+   TOPIC CARD (Syllabus screen)
+   FIX: accepts dark bool, memo-computes C internally
+═══════════════════════════════════════════════════════ */
+const TopicCard = memo(({ topic, subjectId, chapterId, subjectName, chapterName, subjectColor, onTap, onDelete, dark })=>{
+  const C   = T(dark);
+  const due = isDue(topic);
+  const eff = due?"do-revision":topic.status;
+  const st  = STATUS[eff]||STATUS["not-started"];
+  const pri = PRIORITY[topic.priority||"normal"];
+  const done= topic.status==="studied"||topic.status==="do-revision";
+
+  const toggle = useCallback(e=>{
+    e.stopPropagation();
+    setStatus(subjectId,chapterId,topic.id,done?"not-started":"studied");
+  },[subjectId,chapterId,topic.id,done]);
+
+  const change = useCallback(k=>setStatus(subjectId,chapterId,topic.id,k),[subjectId,chapterId,topic.id]);
+
+  return(
+    React.createElement("article",{onClick:onTap,style:{ background:C.card, borderRadius:18, marginBottom:12, border:`1px solid ${C.sep}`,
+        boxShadow:dark?"none":"0 2px 8px rgba(0,0,0,.06)",
+        display:"flex", alignItems:"stretch", overflow:"hidden", cursor:"pointer" }},React.createElement("div",{style:{ width:5, background:st.color, flexShrink:0 }}),React.createElement("div",{style:{ flex:1, padding:"16px 16px 16px 18px" }},/* breadcrumb + delete */,React.createElement("div",{style:{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }},React.createElement("div",{style:{ display:"flex", alignItems:"center", gap:6 }},React.createElement("div",{style:{ width:8, height:8, borderRadius:"50%", background:subjectColor }}),React.createElement("span",{style:{ fontSize:12, color:C.text2, fontWeight:500 }},subjectName,"›",chapterName)),React.createElement("div",{onClick:e=>e.stopPropagation()},React.createElement(DelBtn,{onDelete:onDelete,size:17}))),/* checkbox + name */,React.createElement("div",{style:{ display:"flex", alignItems:"flex-start", gap:14, marginBottom:14 }},React.createElement("button",{onClick:toggle,role:"checkbox","aria-checked":done,"aria-label":done?"Mark not started":"Mark studied",style:{ width:32, height:32, borderRadius:9, flexShrink:0, border:"none",
+              cursor:"pointer", marginTop:1, background:done?C.green:"transparent",
+              outline:`2px solid ${done?C.green:C.card3}`,
+              display:"flex", alignItems:"center", justifyContent:"center", transition:"all .2s" }},done&&React.createElement(Ic,{n:"check",size:14,color:"#fff",sw:2.5})),React.createElement("span",{style:{ fontSize:17, fontWeight:700, color:done?C.text2:C.text, lineHeight:1.3, flex:1,
+            textDecoration:done&&!due?"line-through":"none", textDecorationColor:C.text3 }},topic.name)),/* badges */,React.createElement("div",{style:{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 }},React.createElement(Badge,{label:st.label,color:st.color,bg:st.bg}),React.createElement(Badge,{label:pri.label,color:pri.color,bg:pri.bg}),topic.examDate&&(
+            React.createElement("span",{style:{ fontSize:12, color:C.text2, display:"flex", alignItems:"center", gap:4 }},React.createElement(Ic,{n:"clock",size:11,color:C.text2}),topic.examDate)
+          ),due&&React.createElement(Badge,{label:"Revision Due!",color:C.red,bg:C.red+"18"})),topic.notes&&(
+          React.createElement("div",{style:{ fontSize:13, color:C.text2, lineHeight:1.5, borderTop:`1px solid ${C.sep}`,
+            paddingTop:10, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }},topic.notes)
+        ),React.createElement(StatusRow,{currentStatus:topic.status,isRevDue:due,onChange:change,C:C})))
+  );
+});
+
+/* ═══════════════════════════════════════════════════════
+   TODAY SCREEN CARD — module-level (was inside TodayScreen — FIXED)
+═══════════════════════════════════════════════════════ */
+const TodayCard = memo(({ t, accentColor, dark })=>{
+  const C   = T(dark);
+  const due = isDue(t);
+  const eff = due?"do-revision":t.status;
+  const st  = STATUS[eff]||STATUS["not-started"];
+  const pri = PRIORITY[t.priority||"normal"];
+  const done= t.status==="studied"||t.status==="do-revision";
+
+  const toggle = useCallback(()=>setStatus(t.subjectId,t.chapterId,t.id,done?"not-started":"studied"),
+    [t.subjectId,t.chapterId,t.id,done]);
+  const change = useCallback(k=>setStatus(t.subjectId,t.chapterId,t.id,k),
+    [t.subjectId,t.chapterId,t.id]);
+
+  return(
+    React.createElement("article",{style:{ background:C.card, borderRadius:18, marginBottom:12, border:`1px solid ${C.sep}`,
+      boxShadow:dark?"none":"0 2px 8px rgba(0,0,0,.06)",
+      display:"flex", alignItems:"stretch", overflow:"hidden" }},React.createElement("div",{style:{ width:5, background:accentColor, flexShrink:0 }}),React.createElement("div",{style:{ flex:1, padding:"16px 16px 14px 18px" }},React.createElement("div",{style:{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }},React.createElement("div",{style:{ width:7, height:7, borderRadius:"50%", background:t.subjectColor }}),React.createElement("span",{style:{ fontSize:12, color:C.text2, fontWeight:500 }},t.chapterName)),React.createElement("div",{style:{ display:"flex", alignItems:"flex-start", gap:12, marginBottom:12 }},React.createElement("button",{onClick:toggle,role:"checkbox","aria-checked":done,"aria-label":done?"Mark not started":"Mark studied",style:{ width:30, height:30, borderRadius:8, flexShrink:0, border:"none",
+              cursor:"pointer", marginTop:1, background:done?C.green:"transparent",
+              outline:`2px solid ${done?C.green:C.card3}`,
+              display:"flex", alignItems:"center", justifyContent:"center", transition:"all .18s" }},done&&React.createElement(Ic,{n:"check",size:14,color:"#fff",sw:2.5})),React.createElement("span",{style:{ fontSize:17, fontWeight:700, color:done?C.text2:C.text,
+            lineHeight:1.3, flex:1,
+            textDecoration:done&&!due?"line-through":"none", textDecorationColor:C.text3 }},t.name)),React.createElement("div",{style:{ display:"flex", gap:7, flexWrap:"wrap", marginBottom:14 }},React.createElement(Badge,{label:st.label,color:st.color,bg:st.bg}),React.createElement(Badge,{label:pri.label,color:pri.color,bg:pri.bg}),t.examDate&&(
+            React.createElement("span",{style:{ fontSize:12, color:C.text2, display:"flex", alignItems:"center", gap:4 }},React.createElement(Ic,{n:"clock",size:11,color:C.text2}),t.examDate)
+          ),due&&React.createElement(Badge,{label:"Revision Due!",color:C.red,bg:C.red+"18"})),React.createElement(StatusRow,{currentStatus:t.status,isRevDue:due,onChange:change,C:C})))
+  );
+});
+
+/* Collapsible section — module-level (was inside TodayScreen — FIXED) */
+const TodaySection = memo(({ icon, label, color, topics, accentColor, dark })=>{
+  const [open,    setOpen]    = useState(true);
+  const [showAll, setShowAll] = useState(false);
+  const C = T(dark);
+  const LIMIT=3, visible=showAll?topics:topics.slice(0,LIMIT), hidden=topics.length-LIMIT;
+  return(
+    React.createElement("section",{style:{ marginBottom:4 }},React.createElement("button",{onClick:()=>setOpen(v=>!v),"aria-expanded":open,style:{ width:"100%", display:"flex", alignItems:"center", gap:8,
+          padding:"14px 2px 10px", background:"transparent", border:"none", cursor:"pointer", minHeight:44 }},React.createElement(Ic,{n:icon,size:14,color:color,sw:2}),React.createElement("span",{style:{ fontSize:13, fontWeight:700, color, textTransform:"uppercase", letterSpacing:.5, flex:1 }},label),React.createElement("span",{style:{ fontSize:13, fontWeight:700, color:C.text2 }},topics.length),React.createElement("div",{style:{ transform:open?"rotate(180deg)":"none", transition:"transform .2s", display:"flex" }},React.createElement(Ic,{n:"chevD",size:16,color:C.text2,sw:2}))),open&&(
+        React.createElement(React.Fragment,null,visible.map(t=>React.createElement(TodayCard,{key:t.id,t:t,accentColor:accentColor,dark:dark})),!showAll&&hidden>0&&(
+            React.createElement("button",{onClick:()=>setShowAll(true),style:{ width:"100%", padding:"12px", marginBottom:12, cursor:"pointer",
+                background:"transparent", border:`1.5px dashed ${C.sep}`, borderRadius:14,
+                fontSize:14, fontWeight:600, color:C.text2, minHeight:44 }},"Show",hidden,"more")
+          ),showAll&&topics.length>LIMIT&&(
+            React.createElement("button",{onClick:()=>setShowAll(false),style:{ width:"100%", padding:"12px", marginBottom:12, cursor:"pointer",
+                background:"transparent", border:`1.5px dashed ${C.sep}`, borderRadius:14,
+                fontSize:14, fontWeight:600, color:C.text2, minHeight:44 }},"Show less")
+          ))
+      ))
+  );
+});
+
+const UpNextSubject = memo(({ sub, topics, dark })=>{
+  const [showAll,setShowAll] = useState(false);
+  const C=T(dark), LIMIT=2, visible=showAll?topics:topics.slice(0,LIMIT), hidden=topics.length-LIMIT;
+  const allT  = useMemo(()=>sub.chapters.flatMap(c=>c.topics),[sub.chapters]);
+  const doneN = useMemo(()=>allT.filter(t=>t.status==="studied"||t.status==="do-revision").length,[allT]);
+  return(
+    React.createElement("div",{style:{ marginBottom:16 }},React.createElement("div",{style:{ display:"flex", alignItems:"center", gap:10, marginBottom:10, padding:"0 2px" }},React.createElement("div",{style:{ width:10, height:10, borderRadius:"50%", background:sub.color }}),React.createElement("span",{style:{ fontSize:15, fontWeight:700, color:C.text, flex:1 }},sub.name),React.createElement("span",{style:{ fontSize:12, color:C.text2, fontWeight:500 }},doneN,"/",allT.length),React.createElement("div",{style:{ width:50 }},React.createElement(Bar,{value:pct(allT),color:sub.color,h:3,C:C}))),visible.map(t=>React.createElement(TodayCard,{key:t.id,t:t,accentColor:sub.color,dark:dark})),!showAll&&hidden>0&&(
+        React.createElement("button",{onClick:()=>setShowAll(true),style:{ width:"100%", padding:"10px", marginBottom:4, cursor:"pointer",
+            background:"transparent", border:`1.5px dashed ${C.sep}`, borderRadius:14,
+            fontSize:13, fontWeight:600, color:C.text2, minHeight:44 }},"+",hidden,"more in",sub.name)
+      ),showAll&&topics.length>LIMIT&&(
+        React.createElement("button",{onClick:()=>setShowAll(false),style:{ width:"100%", padding:"10px", marginBottom:4, cursor:"pointer",
+            background:"transparent", border:`1.5px dashed ${C.sep}`, borderRadius:14,
+            fontSize:13, fontWeight:600, color:C.text2, minHeight:44 }},"Show less")
+      ))
+  );
+});
+
+const UpNextSection = memo(({ groups, total, dark })=>{
+  const [open,setOpen] = useState(true);
+  const C=T(dark);
+  if(!groups.length) return null;
+  return(
+    React.createElement("section",null,React.createElement("button",{onClick:()=>setOpen(v=>!v),"aria-expanded":open,style:{ width:"100%", display:"flex", alignItems:"center", gap:8,
+          padding:"14px 2px 10px", background:"transparent", border:"none", cursor:"pointer", minHeight:44 }},React.createElement(Ic,{n:"flag",size:14,color:C.text2,sw:2}),React.createElement("span",{style:{ fontSize:13, fontWeight:700, color:C.text2, textTransform:"uppercase", letterSpacing:.5, flex:1 }},"Up Next"),React.createElement("span",{style:{ fontSize:13, fontWeight:700, color:C.text2 }},total),React.createElement("div",{style:{ transform:open?"rotate(180deg)":"none", transition:"transform .2s", display:"flex" }},React.createElement(Ic,{n:"chevD",size:16,color:C.text2,sw:2}))),open&&groups.map(({sub,topics})=>(
+        React.createElement(UpNextSubject,{key:sub.id,sub:sub,topics:topics,dark:dark})
+      )))
+  );
+});
+
+/* ═══════════════════════════════════════════════════════
+   REVISE CARD — module-level (was inside ReviseScreen — FIXED)
+═══════════════════════════════════════════════════════ */
+const ReviseCard = memo(({ t, dark })=>{
+  const C   = T(dark);
+  const pri = PRIORITY[t.priority||"normal"];
+  const markDone = useCallback(()=>setStatus(t.subjectId,t.chapterId,t.id,"studied"),
+    [t.subjectId,t.chapterId,t.id]);
+  return(
+    React.createElement("article",{style:{ background:C.card, borderRadius:18, marginBottom:12, border:`1px solid ${C.sep}`,
+      boxShadow:dark?"none":"0 2px 8px rgba(0,0,0,.06)", display:"flex", overflow:"hidden" }},React.createElement("div",{style:{ width:5, background:C.red, flexShrink:0 }}),React.createElement("div",{style:{ flex:1, padding:"16px 16px 16px 18px" }},React.createElement("div",{style:{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }},React.createElement("div",{style:{ width:7, height:7, borderRadius:"50%", background:t.subjectColor }}),React.createElement("span",{style:{ fontSize:12, color:C.text2, fontWeight:500 }},t.subjectName,"›",t.chapterName)),React.createElement("div",{style:{ fontSize:18, fontWeight:700, color:C.text, marginBottom:10 }},t.name),t.notes&&(
+          React.createElement("div",{style:{ fontSize:13, color:C.text2, lineHeight:1.5, marginBottom:12,
+            display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }},t.notes)
+        ),React.createElement("div",{style:{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }},React.createElement(Badge,{label:pri.label,color:pri.color,bg:pri.bg}),t.studiedDate&&(
+            React.createElement("span",{style:{ fontSize:12, color:C.text2, display:"flex", alignItems:"center", gap:4 }},React.createElement(Ic,{n:"clock",size:11,color:C.text2}),"Studied",t.studiedDate)
+          ),React.createElement("div",{style:{ flex:1 }}),React.createElement("button",{onClick:markDone,style:{ padding:"10px 18px", background:C.blue, color:"#fff", border:"none",
+              borderRadius:12, fontSize:14, fontWeight:700, cursor:"pointer",
+              display:"flex", alignItems:"center", gap:6, minHeight:44 }},React.createElement(Ic,{n:"check",size:13,color:"#fff",sw:2.5}),"Revised"))))
+  );
+});
+
+/* ═══════════════════════════════════════════════════════
+   TOPIC EDIT SHEET
+   KEY FIX: ALL fields buffered locally. Single dispatch on save/close.
+   No dispatch-per-keystroke = no re-render = keyboard stays open.
+═══════════════════════════════════════════════════════ */
+const TopicEditSheet = memo(({ topic, subjectId, chapterId, open, onClose, dark })=>{
+  const C = T(dark);
+  const [form, setForm] = useState(()=>topic||{});
+
+  // Sync when a different topic is opened
+  useEffect(()=>{ if(topic) setForm({...topic}); },[topic?.id]);
+
+  const set = useCallback((k,v)=>setForm(p=>({...p,[k]:v})),[]);
+
+  // Write everything to store at once
+  const saveAndClose = useCallback(()=>{
+    if(!topic) return onClose();
+    dispatch(st=>({
+      ...st,
+      subjects:st.subjects.map(sub=>sub.id!==subjectId?sub:{
+        ...sub,
+        chapters:sub.chapters.map(ch=>ch.id!==chapterId?ch:{
+          ...ch,
+          topics:ch.topics.map(t=>t.id!==topic.id?t:{
+            ...t, ...form,
+            studiedDate: form.status==="studied"
+              ? (t.studiedDate||toDay())  // preserve original studied date if already set
+              : null,
+          }),
+        }),
+      }),
+    }));
+    onClose();
+  },[topic,subjectId,chapterId,form,onClose]);
+
+  const del = useCallback(()=>{
+    dispatch(st=>({
+      ...st,
+      subjects:st.subjects.map(sub=>sub.id!==subjectId?sub:{
+        ...sub,
+        chapters:sub.chapters.map(ch=>ch.id!==chapterId?ch:{
+          ...ch, topics:ch.topics.filter(t=>t.id!==topic.id),
+        }),
+      }),
+    }));
+    onClose();
+  },[subjectId,chapterId,topic?.id,onClose]);
+
+  if(!open||!topic) return null;
+
+  const due = isDue(topic);
+  const effStatus = due&&form.status==="studied"?"do-revision":form.status;
+
+  return(
+    React.createElement(Sheet,{open:open,onClose:saveAndClose,title:"Edit Topic",C:C},/* Topic name editable */,React.createElement(Fld,{label:"Topic Name",C:C},React.createElement(Inp,{C:C,value:form.name||"",onChange:e=>set("name",e.target.value),inputMode:"text",placeholder:"Topic name"})),React.createElement(Fld,{label:"Status",C:C},React.createElement("div",{style:{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }},Object.entries(STATUS).map(([k,v])=>(
+            React.createElement("button",{key:k,onClick:()=>set("status",k),"aria-pressed":effStatus===k,style:{ padding:"13px 12px", borderRadius:14, cursor:"pointer",
+                fontSize:14, fontWeight:600, minHeight:48,
+                border:`1.5px solid ${effStatus===k?v.color:C.sep}`,
+                background:effStatus===k?v.color+"18":"transparent",
+                color:effStatus===k?v.color:C.text2,
+                transition:"all .15s", display:"flex", alignItems:"center", justifyContent:"space-between" }},v.label,effStatus===k&&React.createElement(Ic,{n:"check",size:14,color:v.color,sw:2.5}))
+          )))),React.createElement(Fld,{label:"Priority",C:C},React.createElement("div",{style:{ display:"flex", flexDirection:"column", gap:8 }},Object.entries(PRIORITY).map(([k,v])=>(
+            React.createElement("button",{key:k,onClick:()=>set("priority",k),"aria-pressed":form.priority===k,style:{ padding:"14px 16px", borderRadius:14, cursor:"pointer",
+                fontSize:15, fontWeight:500, textAlign:"left", minHeight:50,
+                border:`1.5px solid ${form.priority===k?v.color:C.sep}`,
+                background:form.priority===k?v.color+"14":"transparent",
+                color:form.priority===k?v.color:C.text,
+                transition:"all .15s", display:"flex", alignItems:"center", justifyContent:"space-between" }},v.label,form.priority===k&&React.createElement(Ic,{n:"check",size:15,color:v.color,sw:2.5}))
+          )))),React.createElement(Fld,{label:"Deadline / Exam Date",C:C},React.createElement(Inp,{C:C,type:"date",value:form.examDate||"",onChange:e=>set("examDate",e.target.value)})),React.createElement(Fld,{label:"Notes",C:C},React.createElement("textarea",{value:form.notes||"",onChange:e=>set("notes",e.target.value),rows:4,placeholder:"Notes about this topic…",style:{ width:"100%", padding:"14px 16px", borderRadius:14,
+            border:`1.5px solid ${C.sep}`, fontSize:15,
+            background:C.card2, color:C.text, outline:"none", resize:"none",
+            WebkitAppearance:"none" }})),React.createElement(Fld,{label:"Resource Link",C:C},React.createElement("div",{style:{ position:"relative" }},React.createElement("div",{style:{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)" }},React.createElement(Ic,{n:"link",size:16,color:C.text2})),React.createElement(Inp,{C:C,value:form.resources||"",onChange:e=>set("resources",e.target.value),placeholder:"YouTube, PDF, article…",inputMode:"url",style:{ paddingLeft:40 }})),form.resources&&(
+          React.createElement("a",{href:form.resources,target:"_blank",rel:"noopener noreferrer",style:{ display:"inline-block", marginTop:8, fontSize:13, color:C.blue, wordBreak:"break-all" }},"Open link ↗")
+        )),topic.studiedDate&&(
+        React.createElement("p",{style:{ fontSize:13, color:C.text2, marginBottom:20, display:"flex", gap:6, alignItems:"center" }},React.createElement(Ic,{n:"clock",size:13,color:C.text2}),"Studied",topic.studiedDate,"· Revision due after",REV_DAYS,"days")
+      ),/* Save + Delete */,React.createElement("button",{onClick:saveAndClose,style:{ width:"100%", padding:"16px", background:C.blue, color:"#fff",
+          border:"none", borderRadius:16, fontSize:16, fontWeight:700, cursor:"pointer",
+          marginBottom:12, minHeight:52 }},"Save Changes"),React.createElement("div",{style:{ borderTop:`1px solid ${C.sep}`, paddingTop:16 }},React.createElement(DelBtn,{onDelete:del,size:16})))
+  );
+});
+
+/* ═══════════════════════════════════════════════════════
+   ONBOARDING
+═══════════════════════════════════════════════════════ */
+const Onboarding = ()=>{
+  const [step,setStep]   = useState(0);
+  const [name,setName]   = useState("");
+  const [date,setDate]   = useState("");
+  const C = themes.light;
+
+  const steps=[
+    { icon:"🎯", title:"Which exam are
+you preparing for?", valid:name.trim().length>0,
+      body:React.createElement(Inp,{C:C,value:name,onChange:e=>setName(e.target.value),placeholder:"e.g. UPSC, JEE, GMAT…",inputMode:"text"}) },
+    { icon:"📅", title:"When is your
+exam date?", valid:!!date,
+      body:React.createElement(Inp,{C:C,type:"date",value:date,onChange:e=>setDate(e.target.value),min:toDay()}) },
+  ];
+  const cur=steps[step];
+
+  const next = ()=>{
+    if(step<steps.length-1){ setStep(step+1); return; }
+    dispatch(s=>({...s, onboarded:true, profile:{ examName:name, examDate:date }}));
+  };
+
+  return(
+    React.createElement("div",{style:{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center",
+      justifyContent:"center", padding:"40px 28px" }},React.createElement("div",{style:{ width:"100%", maxWidth:380, animation:"fadeUp .3s ease" }},React.createElement("div",{style:{ textAlign:"center", marginBottom:44 }},React.createElement("div",{style:{ fontSize:64, marginBottom:14 }},cur.icon),React.createElement("h1",{style:{ fontSize:28, fontWeight:800, color:C.text, lineHeight:1.2, whiteSpace:"pre-line" }},cur.title),React.createElement("div",{style:{ display:"flex", gap:6, justifyContent:"center", marginTop:22 }},steps.map((_,i)=>(
+              React.createElement("div",{key:i,style:{ height:3, width:i===step?28:8, borderRadius:99,
+                background:i<=step?C.blue:C.sep, transition:"all .3s" }})
+            )))),React.createElement("div",{style:{ marginBottom:24 }},cur.body),React.createElement("button",{onClick:next,disabled:!cur.valid,style:{ width:"100%", padding:"16px", background:cur.valid?C.blue:C.card3,
+            color:cur.valid?"#fff":C.text2, border:"none", borderRadius:16,
+            fontSize:17, fontWeight:700, cursor:cur.valid?"pointer":"default",
+            transition:"all .2s", minHeight:52 }},step<steps.length-1?"Continue":"Get Started"),step>0&&(
+          React.createElement("button",{onClick:()=>setStep(s=>s-1),style:{ width:"100%", marginTop:12, padding:"12px", background:"transparent",
+              border:"none", color:C.text2, fontSize:15, cursor:"pointer", minHeight:44 }},"Back")
+        )))
+  );
+};
+
+/* ═══════════════════════════════════════════════════════
+   TODAY SCREEN
+═══════════════════════════════════════════════════════ */
+const TodayScreen = ()=>{
+  const s    = useStore();
+  const C    = useMemo(()=>T(s.settings.dark),[s.settings.dark]);
+  const dark = s.settings.dark;
+  const all  = useMemo(()=>flatAll(s.subjects),[s.subjects]);
+  const dl   = useMemo(()=>daysTo(s.profile.examDate),[s.profile.examDate]);
+  const ph   = useMemo(()=>phaseOf(dl),[dl]);
+  const over = useMemo(()=>pct(all),[all]);
+  const studied    = useMemo(()=>all.filter(t=>t.status==="studied"||t.status==="do-revision").length,[all]);
+  const revDue     = useMemo(()=>all.filter(t=>isDue(t)),[all]);
+  const studying   = useMemo(()=>all.filter(t=>t.status==="studying"),[all]);
+  const upNextGrps = useMemo(()=>s.subjects.reduce((acc,sub)=>{
+    const topics = sub.chapters.flatMap(ch=>
+      ch.topics.filter(t=>t.status==="not-started"&&t.priority!=="optional")
+        .map(t=>({...t, subjectId:sub.id, subjectName:sub.name, subjectColor:sub.color,
+          chapterId:ch.id, chapterName:ch.name}))
+    ).sort((a,b)=>(PRI_ORD[b.priority]||2)-(PRI_ORD[a.priority]||2));
+    if(topics.length) acc.push({sub,topics});
+    return acc;
+  },[]),[s.subjects]);
+  const totalUpNext = useMemo(()=>upNextGrps.reduce((n,g)=>n+g.topics.length,0),[upNextGrps]);
+  const hasAny = revDue.length>0||studying.length>0||totalUpNext>0;
+
+  return(
+    React.createElement("div",{style:{ background:C.bg, minHeight:"100vh", paddingBottom:100 }},React.createElement("header",{style:{ position:"sticky", top:0, zIndex:50,
+        background:C.nav, backdropFilter:"blur(24px) saturate(180%)", WebkitBackdropFilter:"blur(24px) saturate(180%)",
+        padding:"18px 20px 14px", borderBottom:`1px solid ${C.sep}`,
+        display:"flex", justifyContent:"space-between", alignItems:"flex-end" }},React.createElement("div",null,React.createElement("h1",{style:{ fontSize:26, fontWeight:800, letterSpacing:"-.7px", color:C.text }},"Today"),s.profile.examName&&React.createElement("p",{style:{ fontSize:13, color:C.text2, marginTop:2 }},s.profile.examName)),dl!==null&&(
+          React.createElement("div",{style:{ textAlign:"right" }},React.createElement("div",{style:{ fontSize:28, fontWeight:900, color:ph?.color, lineHeight:1, letterSpacing:"-1px" }},dl),React.createElement("div",{style:{ fontSize:11, color:C.text2, fontWeight:500 }},"days left"))
+        )),React.createElement("div",{style:{ padding:"18px 16px" }},ph&&(
+          React.createElement("div",{style:{ background:ph.color+"14", borderRadius:16, padding:"13px 18px", marginBottom:16,
+            border:`1px solid ${ph.color}28`, display:"flex", alignItems:"center", gap:10 }},React.createElement(Ic,{n:"flag",size:15,color:ph.color,sw:1.8}),React.createElement("span",{style:{ fontSize:14, fontWeight:700, color:ph.color }},ph.label))
+        ),/* Progress hero */,React.createElement("div",{style:{ background:C.card, borderRadius:22, padding:"22px", marginBottom:14,
+          border:`1px solid ${C.sep}`, boxShadow:dark?"none":"0 2px 10px rgba(0,0,0,.07)" }},React.createElement("div",{style:{ display:"flex", alignItems:"center", gap:20 }},React.createElement("div",{style:{ position:"relative", flexShrink:0 }},React.createElement(Ring,{value:over,size:76,sw:7}),React.createElement("div",{style:{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }},React.createElement("span",{style:{ fontSize:15, fontWeight:900, color:C.blue }},over,"%"))),React.createElement("div",{style:{ flex:1 }},React.createElement("div",{style:{ fontSize:21, fontWeight:800, color:C.text, letterSpacing:"-.5px" }},over,"% Complete"),React.createElement("p",{style:{ fontSize:13, color:C.text2, marginTop:4 }},studied,"of",all.length,"topics"),React.createElement("div",{style:{ marginTop:12 }},React.createElement(Bar,{value:over,h:7,C:C}))))),/* Stats row */,React.createElement("div",{style:{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:22 }},[
+            { v:revDue.length,   l:"Revise Due", c:C.red    },
+            { v:studying.length, l:"Studying",   c:C.orange },
+            { v:all.filter(t=>t.status==="not-started").length, l:"Remaining", c:C.text2 },
+          ].map(m=>(
+            React.createElement("div",{key:m.l,style:{ background:C.card, borderRadius:18, padding:"16px 10px", textAlign:"center", border:`1px solid ${C.sep}` }},React.createElement("div",{style:{ fontSize:28, fontWeight:900, color:m.c, lineHeight:1, letterSpacing:"-1px" }},m.v),React.createElement("div",{style:{ fontSize:11, color:C.text2, marginTop:5, fontWeight:600 }},m.l))
+          ))),all.length===0&&(
+          React.createElement("div",{style:{ textAlign:"center", padding:"60px 0" }},React.createElement(Ic,{n:"book",size:40,color:C.text3,sw:1.4}),React.createElement("p",{style:{ fontSize:18, fontWeight:700, color:C.text, marginTop:16 }},"No syllabus yet"),React.createElement("p",{style:{ fontSize:15, color:C.text2, marginTop:6 }},"Go to Syllabus tab to add subjects"))
+        ),all.length>0&&!hasAny&&(
+          React.createElement("div",{style:{ textAlign:"center", padding:"50px 0" }},React.createElement("div",{style:{ width:72, height:72, borderRadius:22, background:C.green+"20",
+              display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 20px" }},React.createElement(Ic,{n:"check",size:34,color:C.green,sw:1.8})),React.createElement("p",{style:{ fontSize:20, fontWeight:700, color:C.text }},"All done!"),React.createElement("p",{style:{ fontSize:15, color:C.text2, marginTop:6, lineHeight:1.5 }},"Everything is studied or in revision."))
+        ),revDue.length>0&&React.createElement(TodaySection,{icon:"clock",label:"Revision Due",color:C.red,topics:revDue,accentColor:C.red,dark:dark}),studying.length>0&&React.createElement(TodaySection,{icon:"book",label:"In Progress",color:C.orange,topics:studying,accentColor:C.orange,dark:dark}),React.createElement(UpNextSection,{groups:upNextGrps,total:totalUpNext,dark:dark}),dl!==null&&(
+          React.createElement("div",{style:{ background:ph?.color||C.blue, borderRadius:22, padding:"24px", color:"#fff", marginTop:16 }},React.createElement("p",{style:{ fontSize:13, opacity:.8, marginBottom:6 }},s.profile.examName),React.createElement("div",{style:{ fontSize:56, fontWeight:900, lineHeight:1, letterSpacing:"-2px" }},dl),React.createElement("p",{style:{ fontSize:15, opacity:.75, marginTop:6 }},"days remaining"),over<70&&dl<30&&(
+              React.createElement("p",{style:{ marginTop:14, background:"rgba(255,255,255,.18)", borderRadius:14,
+                padding:"12px 16px", fontSize:14, lineHeight:1.5 }},100-over,"% of your syllabus is remaining with",dl,"days to go.")
+            ))
+        )))
+  );
+};
+
+/* ═══════════════════════════════════════════════════════
+   SYLLABUS SCREEN
+   KEY FIX: all inline sheet callbacks wrapped in useCallback
+   so Sheet never gets a fresh onClose on every keystroke
+═══════════════════════════════════════════════════════ */
+const SyllabusScreen = ()=>{
+  const s    = useStore();
+  const C    = useMemo(()=>T(s.settings.dark),[s.settings.dark]);
+  const dark = s.settings.dark;
+
+  const [activeId, setActiveId] = useState(null);
+  const [search,   setSearch]   = useState("");
+  const [sortKey,  setSortKey]  = useState("manual");
+  const [openChs,  setOpenChs]  = useState({});
+  const [editT,    setEditT]    = useState(null);
+
+  // Sheet open states
+  const [subSheet,   setSubSheet]   = useState(false);
+  const [chSheet,    setChSheet]    = useState(false);
+  const [topicChId,  setTopicChId]  = useState(null);
+
+  // New item form state
+  const [newSubName,  setNewSubName]  = useState("");
+  const [newSubColor, setNewSubColor] = useState(COLORS[0]);
+  const [newChName,   setNewChName]   = useState("");
+  const [newTopicName,setNewTopicName]= useState("");
+  const [newTopicPri, setNewTopicPri] = useState("normal");
+
+  const activeSub = useMemo(
+    ()=>s.subjects.find(x=>x.id===activeId)||s.subjects[0]||null,
+    [s.subjects,activeId]
+  );
+
+  useEffect(()=>{
+    if(!activeId&&s.subjects.length>0) setActiveId(s.subjects[0].id);
+  },[s.subjects.length]);
+
+  // Stable close callbacks — don't change on every render
+  const closeSubSheet   = useCallback(()=>setSubSheet(false),[]);
+  const closeChSheet    = useCallback(()=>setChSheet(false),[]);
+  const closeTopicSheet = useCallback(()=>setTopicChId(null),[]);
+  const closeEditSheet  = useCallback(()=>setEditT(null),[]);
+
+  const addSubject = useCallback(()=>{
+    if(!newSubName.trim()) return;
+    const id=uid();
+    dispatch(st=>({...st, subjects:[...st.subjects,{ id, name:newSubName.trim(), color:newSubColor, chapters:[] }]}));
+    setActiveId(id); setNewSubName(""); setSubSheet(false);
+  },[newSubName,newSubColor]);
+
+  const addChapter = useCallback(()=>{
+    if(!newChName.trim()||!activeSub) return;
+    const id=uid();
+    dispatch(st=>({...st, subjects:st.subjects.map(sub=>sub.id!==activeSub.id?sub:
+      {...sub, chapters:[...sub.chapters,{ id, name:newChName.trim(), topics:[] }]})}));
+    setOpenChs(p=>({...p,[id]:true}));
+    setNewChName(""); setChSheet(false);
+  },[newChName,activeSub]);
+
+  const addTopic = useCallback(()=>{
+    if(!newTopicName.trim()||!activeSub||!topicChId) return;
+    const t={ id:uid(), name:newTopicName.trim(), status:"not-started",
+      priority:newTopicPri, examDate:"", notes:"", resources:"", studiedDate:null };
+    dispatch(st=>({...st, subjects:st.subjects.map(sub=>sub.id!==activeSub.id?sub:{
+      ...sub, chapters:sub.chapters.map(ch=>ch.id!==topicChId?ch:{...ch, topics:[...ch.topics,t]}),
+    })}));
+    setNewTopicName(""); setNewTopicPri("normal"); setTopicChId(null);
+  },[newTopicName,newTopicPri,activeSub,topicChId]);
+
+  const delSubject = useCallback(id=>
+    dispatch(st=>({...st, subjects:st.subjects.filter(x=>x.id!==id)})),[]);
+  const delChapter = useCallback((sId,cId)=>
+    dispatch(st=>({...st, subjects:st.subjects.map(sub=>sub.id!==sId?sub:
+      {...sub, chapters:sub.chapters.filter(c=>c.id!==cId)})})),[]);
+  const delTopic = useCallback((sId,cId,tId)=>
+    dispatch(st=>({...st, subjects:st.subjects.map(sub=>sub.id!==sId?sub:{
+      ...sub, chapters:sub.chapters.map(ch=>ch.id!==cId?ch:
+        {...ch, topics:ch.topics.filter(t=>t.id!==tId)}),
+    })})),[]);
+
+  const sortTopics = useCallback(topics=>{
+    if(sortKey==="manual") return topics;
+    const pO={high:3,normal:2,optional:1};
+    const sO={"not-started":0,studying:1,"do-revision":2,studied:3};
+    return [...topics].sort((a,b)=>{
+      if(sortKey==="priority") return (pO[b.priority]||2)-(pO[a.priority]||2);
+      if(sortKey==="status")   return sO[a.status]-sO[b.status];
+      if(sortKey==="az")       return a.name.localeCompare(b.name);
+      return 0;
+    });
+  },[sortKey]);
+
+  const searchRes = useMemo(()=>search.trim()
+    ? flatAll(s.subjects).filter(t=>
+        t.name.toLowerCase().includes(search.toLowerCase())||
+        t.subjectName.toLowerCase().includes(search.toLowerCase())||
+        t.chapterName.toLowerCase().includes(search.toLowerCase()))
+    : null
+  ,[search,s.subjects]);
+
+  const activeTopics = useMemo(
+    ()=>activeSub?activeSub.chapters.flatMap(c=>c.topics):[]
+  ,[activeSub]);
+
+  return(
+    React.createElement("div",{style:{ background:C.bg, minHeight:"100vh", paddingBottom:100 }},React.createElement("header",{style:{ position:"sticky", top:0, zIndex:50, background:C.nav,
+        backdropFilter:"blur(24px) saturate(180%)", WebkitBackdropFilter:"blur(24px) saturate(180%)" }},React.createElement("div",{style:{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"18px 20px 12px" }},React.createElement("h1",{style:{ fontSize:26, fontWeight:800, letterSpacing:"-.7px", color:C.text }},"Syllabus"),React.createElement("button",{onClick:()=>{ setNewSubName(""); setNewSubColor(COLORS[0]); setSubSheet(true); },style:{ display:"flex", alignItems:"center", gap:6, padding:"10px 18px",
+              background:C.blue, color:"#fff", border:"none", borderRadius:99,
+              fontSize:15, fontWeight:600, cursor:"pointer", minHeight:44 }},React.createElement(Ic,{n:"plus",size:14,color:"#fff",sw:2.5}),"Subject")),/* Subject pills */,s.subjects.length>0&&(
+          React.createElement("div",{style:{ display:"flex", gap:8, overflowX:"auto", padding:"0 20px 12px" }},s.subjects.map(sub=>{
+              const active=activeSub?.id===sub.id;
+              return(
+                React.createElement("button",{key:sub.id,onClick:()=>setActiveId(sub.id),style:{ display:"flex", alignItems:"center", gap:7, padding:"9px 16px",
+                    borderRadius:99, flexShrink:0, cursor:"pointer", minHeight:40,
+                    border:`1.5px solid ${active?sub.color:C.sep}`,
+                    background:active?sub.color+"18":C.card,
+                    color:active?sub.color:C.text2,
+                    fontWeight:active?700:500, fontSize:14, transition:"all .18s" }},React.createElement("div",{style:{ width:8, height:8, borderRadius:"50%", background:sub.color }}),sub.name,React.createElement("span",{style:{ fontSize:11, opacity:.8 }},pct(sub.chapters.flatMap(c=>c.topics)),"%"))
+              );
+            }))
+        ),/* Search */,s.subjects.length>0&&(
+          React.createElement("div",{style:{ padding:"0 20px 14px", position:"relative" }},React.createElement("div",{style:{ position:"absolute", left:34, top:"50%", transform:"translateY(-50%)", pointerEvents:"none" }},React.createElement(Ic,{n:"search",size:16,color:C.text2,sw:1.8})),React.createElement("input",{value:search,onChange:e=>setSearch(e.target.value),placeholder:"Search topics, chapters…",inputMode:"search",style:{ width:"100%", padding:"12px 14px 12px 42px", borderRadius:14,
+                border:`1.5px solid ${C.sep}`, fontSize:15, background:C.card,
+                color:C.text, outline:"none", WebkitAppearance:"none" }}))
+        ),React.createElement("div",{style:{ height:1, background:C.sep }})),React.createElement("main",{style:{ padding:"18px 16px" }},searchRes?(
+          React.createElement(React.Fragment,null,React.createElement("p",{style:{ fontSize:13, color:C.text2, marginBottom:14, fontWeight:500 }},searchRes.length,"result",searchRes.length!==1?"s":""),searchRes.map(t=>(
+              React.createElement(TopicCard,{key:t.id,topic:t,subjectId:t.subjectId,subjectName:t.subjectName,subjectColor:t.subjectColor,chapterId:t.chapterId,chapterName:t.chapterName,onTap:()=>setEditT({topic:t,subjectId:t.subjectId,chapterId:t.chapterId}),onDelete:()=>delTopic(t.subjectId,t.chapterId,t.id),dark:dark})
+            )))
+        ):s.subjects.length===0?(
+          React.createElement("div",{style:{ textAlign:"center", padding:"100px 20px" }},React.createElement("div",{style:{ width:72, height:72, borderRadius:20, background:C.card,
+              border:`1.5px solid ${C.sep}`, display:"flex", alignItems:"center",
+              justifyContent:"center", margin:"0 auto 24px" }},React.createElement(Ic,{n:"book",size:32,color:C.text2,sw:1.5})),React.createElement("p",{style:{ fontSize:21, fontWeight:700, color:C.text, marginBottom:8 }},"No subjects yet"),React.createElement("p",{style:{ fontSize:15, color:C.text2, lineHeight:1.5 }},"Tap "+ Subject" to start"))
+        ):!activeSub?null:(
+          React.createElement(React.Fragment,null,/* Subject summary card */,React.createElement("div",{style:{ background:C.card, borderRadius:20, padding:"20px", marginBottom:18,
+              border:`1px solid ${C.sep}`, boxShadow:dark?"none":"0 2px 8px rgba(0,0,0,.06)" }},React.createElement("div",{style:{ display:"flex", alignItems:"center", gap:16 }},React.createElement("div",{style:{ position:"relative", flexShrink:0 }},React.createElement(Ring,{value:pct(activeTopics),color:activeSub.color,size:64,sw:6}),React.createElement("div",{style:{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }},React.createElement("span",{style:{ fontSize:14, fontWeight:800, color:activeSub.color }},pct(activeTopics),"%"))),React.createElement("div",{style:{ flex:1 }},React.createElement("h2",{style:{ fontSize:20, fontWeight:800, color:C.text, marginBottom:4 }},activeSub.name),React.createElement("p",{style:{ fontSize:14, color:C.text2 }},activeTopics.filter(t=>t.status==="studied").length,"of",activeTopics.length,"topics studied"),React.createElement("div",{style:{ marginTop:10 }},React.createElement(Bar,{value:pct(activeTopics),color:activeSub.color,h:5,C:C}))),React.createElement(DelBtn,{onDelete:()=>delSubject(activeSub.id),size:19}))),/* Sort */,React.createElement("div",{style:{ display:"flex", gap:8, overflowX:"auto", marginBottom:18, paddingBottom:2 }},[["manual","Custom"],["priority","Priority"],["status","Status"],["az","A–Z"]].map(([k,l])=>(
+                React.createElement("button",{key:k,onClick:()=>setSortKey(k),style:{ padding:"7px 16px", borderRadius:99, flexShrink:0, cursor:"pointer",
+                    border:`1.5px solid ${sortKey===k?C.blue:C.sep}`,
+                    background:sortKey===k?C.blue+"18":C.card,
+                    color:sortKey===k?C.blue:C.text2,
+                    fontSize:13, fontWeight:sortKey===k?700:400, transition:"all .15s", minHeight:36 }},l)
+              ))),/* Chapters */,activeSub.chapters.length===0?(
+              React.createElement("div",{style:{ textAlign:"center", padding:"48px 0", color:C.text2 }},React.createElement("p",{style:{ fontSize:16, fontWeight:500, color:C.text, marginBottom:6 }},"No chapters yet"),React.createElement("p",{style:{ fontSize:14 }},"Tap "Add Chapter" below"))
+            ):activeSub.chapters.map(ch=>{
+              const chTopics=sortTopics(ch.topics);
+              const open=openChs[ch.id]!==false;
+              return(
+                React.createElement("div",{key:ch.id,style:{ marginBottom:10 }},React.createElement("div",{onClick:()=>setOpenChs(p=>({...p,[ch.id]:!open})),style:{ display:"flex", alignItems:"center", gap:12, padding:"14px 18px",
+                      background:C.card, borderRadius:open?"16px 16px 0 0":16,
+                      cursor:"pointer", border:`1px solid ${C.sep}`,
+                      boxShadow:dark?"none":"0 1px 4px rgba(0,0,0,.04)", minHeight:52 }},React.createElement("span",{style:{ flex:1, fontSize:16, fontWeight:700, color:C.text }},ch.name),React.createElement("div",{style:{ width:60 }},React.createElement(Bar,{value:pct(ch.topics),h:4,C:C})),React.createElement("span",{style:{ fontSize:13, color:C.text2, minWidth:30, textAlign:"right", fontWeight:500 }},ch.topics.filter(t=>t.status==="studied").length,"/",ch.topics.length),React.createElement("div",{onClick:e=>e.stopPropagation()},React.createElement(DelBtn,{onDelete:()=>delChapter(activeSub.id,ch.id),size:16})),React.createElement("div",{style:{ transform:open?"rotate(180deg)":"none", transition:"transform .22s", display:"flex" }},React.createElement(Ic,{n:"chevD",size:18,color:C.text2,sw:2}))),open&&(
+                    React.createElement("div",{style:{ background:C.card2, borderRadius:"0 0 16px 16px",
+                      padding:"14px 12px 12px", border:`1px solid ${C.sep}`, borderTop:"none" }},chTopics.length===0
+                        ?React.createElement("p",{style:{ fontSize:14, color:C.text2, textAlign:"center", padding:"14px 0" }},"No topics yet")
+                        :chTopics.map(t=>(
+                          React.createElement(TopicCard,{key:t.id,topic:t,subjectId:activeSub.id,subjectName:activeSub.name,subjectColor:activeSub.color,chapterId:ch.id,chapterName:ch.name,onTap:()=>setEditT({topic:t,subjectId:activeSub.id,chapterId:ch.id}),onDelete:()=>delTopic(activeSub.id,ch.id,t.id),dark:dark})
+                        )),React.createElement("button",{onClick:()=>{ setTopicChId(ch.id); setNewTopicName(""); setNewTopicPri("normal"); },style:{ width:"100%", padding:"14px", marginTop:4, cursor:"pointer",
+                          background:"transparent", border:`1.5px dashed ${C.sep}`, borderRadius:14,
+                          fontSize:15, fontWeight:500, color:C.text2, minHeight:48,
+                          display:"flex", alignItems:"center", justifyContent:"center", gap:8 }},React.createElement(Ic,{n:"plus",size:15,color:C.text2,sw:2}),"Add Topic"))
+                  ))
+              );
+            }),React.createElement("button",{onClick:()=>{ setChSheet(true); setNewChName(""); },style:{ width:"100%", marginTop:8, padding:"16px", cursor:"pointer",
+                background:C.card, border:`1.5px dashed ${C.sep}`, borderRadius:16,
+                fontSize:15, fontWeight:500, color:C.text2, minHeight:52,
+                display:"flex", alignItems:"center", justifyContent:"center", gap:8 }},React.createElement(Ic,{n:"plus",size:16,color:C.text2,sw:2}),"Add Chapter"))
+        )),/* Add Subject */,React.createElement(Sheet,{open:subSheet,onClose:closeSubSheet,title:"New Subject",C:C},React.createElement(Fld,{label:"Colour",C:C},React.createElement("div",{style:{ display:"flex", gap:10, flexWrap:"wrap" }},COLORS.map(c=>(
+              React.createElement("button",{key:c,onClick:()=>setNewSubColor(c),"aria-pressed":c===newSubColor,style:{ width:42, height:42, borderRadius:"50%", background:c, border:"none",
+                  cursor:"pointer", outline:c===newSubColor?`3px solid ${C.text}`:"3px solid transparent",
+                  outlineOffset:2 }})
+            )))),React.createElement(Fld,{label:"Subject Name",C:C},React.createElement(Inp,{C:C,value:newSubName,onChange:e=>setNewSubName(e.target.value),placeholder:"e.g. Physics, History…",inputMode:"text",onKeyDown:e=>e.key==="Enter"&&addSubject()})),React.createElement("button",{onClick:addSubject,disabled:!newSubName.trim(),style:{ width:"100%", padding:"16px", background:newSubName.trim()?C.blue:C.card3,
+            color:newSubName.trim()?"#fff":C.text2, border:"none", borderRadius:16,
+            fontSize:16, fontWeight:600, cursor:"pointer", minHeight:52 }},"Add Subject")),/* Add Chapter */,React.createElement(Sheet,{open:chSheet,onClose:closeChSheet,title:`New Chapter — ${activeSub?.name||""}`,C:C},React.createElement(Fld,{label:"Chapter Name",C:C},React.createElement(Inp,{C:C,value:newChName,onChange:e=>setNewChName(e.target.value),placeholder:"e.g. Thermodynamics, WWII…",inputMode:"text",onKeyDown:e=>e.key==="Enter"&&addChapter()})),React.createElement("button",{onClick:addChapter,disabled:!newChName.trim(),style:{ width:"100%", padding:"16px", background:newChName.trim()?C.blue:C.card3,
+            color:newChName.trim()?"#fff":C.text2, border:"none", borderRadius:16,
+            fontSize:16, fontWeight:600, cursor:"pointer", minHeight:52 }},"Add Chapter")),/* Add Topic */,React.createElement(Sheet,{open:!!topicChId,onClose:closeTopicSheet,title:"New Topic",C:C},React.createElement(Fld,{label:"Topic Name",C:C},React.createElement(Inp,{C:C,value:newTopicName,onChange:e=>setNewTopicName(e.target.value),placeholder:"e.g. Laws of Thermodynamics…",inputMode:"text",onKeyDown:e=>e.key==="Enter"&&addTopic()})),React.createElement(Fld,{label:"Priority",C:C},React.createElement("div",{style:{ display:"flex", flexDirection:"column", gap:8 }},Object.entries(PRIORITY).map(([k,v])=>(
+              React.createElement("button",{key:k,onClick:()=>setNewTopicPri(k),"aria-pressed":newTopicPri===k,style:{ padding:"13px 16px", borderRadius:14, cursor:"pointer",
+                  fontSize:15, fontWeight:500, textAlign:"left", minHeight:50,
+                  border:`1.5px solid ${newTopicPri===k?v.color:C.sep}`,
+                  background:newTopicPri===k?v.color+"14":"transparent",
+                  color:newTopicPri===k?v.color:C.text,
+                  display:"flex", alignItems:"center", justifyContent:"space-between" }},v.label,newTopicPri===k&&React.createElement(Ic,{n:"check",size:15,color:v.color,sw:2.5}))
+            )))),React.createElement("button",{onClick:addTopic,disabled:!newTopicName.trim(),style:{ width:"100%", padding:"16px", background:newTopicName.trim()?C.blue:C.card3,
+            color:newTopicName.trim()?"#fff":C.text2, border:"none", borderRadius:16,
+            fontSize:16, fontWeight:600, cursor:"pointer", minHeight:52 }},"Add Topic")),/* Edit Topic */,editT&&(
+        React.createElement(TopicEditSheet,{topic:editT.topic,subjectId:editT.subjectId,chapterId:editT.chapterId,open:!!editT,onClose:closeEditSheet,dark:dark})
+      ))
+  );
+};
+
+/* ═══════════════════════════════════════════════════════
+   REVISE SCREEN
+═══════════════════════════════════════════════════════ */
+const ReviseScreen = ()=>{
+  const s    = useStore();
+  const C    = useMemo(()=>T(s.settings.dark),[s.settings.dark]);
+  const dark = s.settings.dark;
+  const all  = useMemo(()=>flatAll(s.subjects),[s.subjects]);
+  const due  = useMemo(()=>all.filter(t=>isDue(t)).sort((a,b)=>(PRI_ORD[b.priority]||2)-(PRI_ORD[a.priority]||2)),[all]);
+  const marked=useMemo(()=>all.filter(t=>t.status==="do-revision"&&!isDue(t)),[all]);
+
+  return(
+    React.createElement("div",{style:{ background:C.bg, minHeight:"100vh", paddingBottom:100 }},React.createElement("header",{style:{ position:"sticky", top:0, zIndex:50, background:C.nav,
+        backdropFilter:"blur(24px) saturate(180%)", WebkitBackdropFilter:"blur(24px) saturate(180%)",
+        padding:"18px 20px 14px", borderBottom:`1px solid ${C.sep}` }},React.createElement("h1",{style:{ fontSize:26, fontWeight:800, letterSpacing:"-.7px", color:C.text }},"Revise"),React.createElement("p",{style:{ fontSize:13, color:C.text2, marginTop:2 }},"Topics needing your attention")),React.createElement("main",{style:{ padding:"18px 16px" }},due.length===0&&marked.length===0?(
+          React.createElement("div",{style:{ textAlign:"center", padding:"100px 0" }},React.createElement("div",{style:{ width:72, height:72, borderRadius:22, background:C.green+"20",
+              display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 20px" }},React.createElement(Ic,{n:"check",size:32,color:C.green,sw:1.8})),React.createElement("p",{style:{ fontSize:20, fontWeight:700, color:C.text }},"All caught up!"),React.createElement("p",{style:{ fontSize:15, color:C.text2, marginTop:8, lineHeight:1.6 }},"Topics return here after",REV_DAYS,"days for spaced repetition."))
+        ):(
+          React.createElement(React.Fragment,null,due.length>0&&(
+              React.createElement("section",null,React.createElement("div",{style:{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }},React.createElement(Ic,{n:"clock",size:14,color:C.red,sw:2}),React.createElement("h2",{style:{ fontSize:13, fontWeight:700, color:C.red, textTransform:"uppercase", letterSpacing:.5 }},"Due Now"),React.createElement("span",{style:{ fontSize:13, color:C.text2, fontWeight:600 }},"(",due.length,")")),due.map(t=>React.createElement(ReviseCard,{key:t.id,t:t,dark:dark})))
+            ),marked.length>0&&(
+              React.createElement("section",{style:{ marginTop:due.length>0?22:0 }},React.createElement("div",{style:{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }},React.createElement(Ic,{n:"warn",size:14,color:C.orange,sw:2}),React.createElement("h2",{style:{ fontSize:13, fontWeight:700, color:C.orange, textTransform:"uppercase", letterSpacing:.5 }},"Marked for Revision"),React.createElement("span",{style:{ fontSize:13, color:C.text2, fontWeight:600 }},"(",marked.length,")")),marked.map(t=>React.createElement(ReviseCard,{key:t.id,t:t,dark:dark})))
+            ))
+        )))
+  );
+};
+
+/* ═══════════════════════════════════════════════════════
+   STATS SCREEN
+═══════════════════════════════════════════════════════ */
+const StatsScreen = ()=>{
+  const s    = useStore();
+  const C    = useMemo(()=>T(s.settings.dark),[s.settings.dark]);
+  const dark = s.settings.dark;
+  const all  = useMemo(()=>flatAll(s.subjects),[s.subjects]);
+  const over = useMemo(()=>pct(all),[all]);
+  const dl   = useMemo(()=>daysTo(s.profile.examDate),[s.profile.examDate]);
+  const counts=useMemo(()=>({
+    "not-started":all.filter(t=>t.status==="not-started").length,
+    "studying":   all.filter(t=>t.status==="studying").length,
+    "studied":    all.filter(t=>t.status==="studied").length,
+    "do-revision":all.filter(t=>t.status==="do-revision"||isDue(t)).length,
+  }),[all]);
+
+  return(
+    React.createElement("div",{style:{ background:C.bg, minHeight:"100vh", paddingBottom:100 }},React.createElement("header",{style:{ position:"sticky", top:0, zIndex:50, background:C.nav,
+        backdropFilter:"blur(24px) saturate(180%)", WebkitBackdropFilter:"blur(24px) saturate(180%)",
+        padding:"18px 20px 14px", borderBottom:`1px solid ${C.sep}` }},React.createElement("h1",{style:{ fontSize:26, fontWeight:800, letterSpacing:"-.7px", color:C.text }},"Stats")),React.createElement("main",{style:{ padding:"18px 16px" }},/* Overall ring */,React.createElement("div",{style:{ background:C.card, borderRadius:22, padding:"24px", marginBottom:14,
+          border:`1px solid ${C.sep}`, boxShadow:dark?"none":"0 2px 10px rgba(0,0,0,.07)",
+          display:"flex", alignItems:"center", gap:22 }},React.createElement("div",{style:{ position:"relative", flexShrink:0 }},React.createElement(Ring,{value:over,size:90,sw:8}),React.createElement("div",{style:{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }},React.createElement("span",{style:{ fontSize:18, fontWeight:900, color:C.blue }},over,"%"))),React.createElement("div",null,React.createElement("p",{style:{ fontSize:13, color:C.text2, fontWeight:500 }},"Overall Progress"),React.createElement("div",{style:{ fontSize:28, fontWeight:900, color:C.text, letterSpacing:"-1px", marginTop:4 }},over,"%"),React.createElement("p",{style:{ fontSize:14, color:C.text2, marginTop:4 }},all.filter(t=>t.status==="studied").length,"/",all.length,"topics studied"))),/* Breakdown */,React.createElement("div",{style:{ background:C.card, borderRadius:20, padding:"20px", marginBottom:14,
+          border:`1px solid ${C.sep}`, boxShadow:dark?"none":"0 1px 6px rgba(0,0,0,.05)" }},React.createElement("h2",{style:{ fontSize:16, fontWeight:700, color:C.text, marginBottom:18 }},"Topic Breakdown"),Object.entries(counts).map(([k,v])=>{
+            const cfg=STATUS[k]; const p=all.length?Math.round(v/all.length*100):0;
+            return(
+              React.createElement("div",{key:k,style:{ marginBottom:16 }},React.createElement("div",{style:{ display:"flex", justifyContent:"space-between", marginBottom:6 }},React.createElement("div",{style:{ display:"flex", alignItems:"center", gap:8 }},React.createElement("div",{style:{ width:9, height:9, borderRadius:"50%", background:cfg.color }}),React.createElement("span",{style:{ fontSize:15, fontWeight:500, color:C.text }},cfg.label)),React.createElement("span",{style:{ fontSize:14, color:C.text2, fontWeight:600 }},v)),React.createElement(Bar,{value:p,color:cfg.color,h:7,C:C}))
+            );
+          })),/* By subject */,React.createElement("div",{style:{ background:C.card, borderRadius:20, padding:"20px", marginBottom:14,
+          border:`1px solid ${C.sep}`, boxShadow:dark?"none":"0 1px 6px rgba(0,0,0,.05)" }},React.createElement("h2",{style:{ fontSize:16, fontWeight:700, color:C.text, marginBottom:18 }},"By Subject"),s.subjects.length===0
+            ?React.createElement("p",{style:{ fontSize:15, color:C.text2 }},"No subjects added yet.")
+            :s.subjects.map(sub=>{
+              const topics=sub.chapters.flatMap(c=>c.topics);
+              return(
+                React.createElement("div",{key:sub.id,style:{ marginBottom:18 }},React.createElement("div",{style:{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }},React.createElement("div",{style:{ display:"flex", gap:8, alignItems:"center" }},React.createElement("div",{style:{ width:10, height:10, borderRadius:"50%", background:sub.color }}),React.createElement("span",{style:{ fontSize:15, fontWeight:700, color:C.text }},sub.name)),React.createElement("span",{style:{ fontSize:13, color:C.text2, fontWeight:600 }},topics.filter(t=>t.status==="studied").length,"/",topics.length)),React.createElement(Bar,{value:pct(topics),color:sub.color,h:8,C:C}))
+              );
+            })),dl!==null&&(()=>{
+          const ph=phaseOf(dl);
+          return(
+            React.createElement("div",{style:{ background:ph?.color||C.blue, borderRadius:22, padding:"24px", color:"#fff" }},React.createElement("p",{style:{ fontSize:13, opacity:.8, marginBottom:6 }},s.profile.examName),React.createElement("div",{style:{ fontSize:56, fontWeight:900, lineHeight:1, letterSpacing:"-2px" }},dl),React.createElement("p",{style:{ fontSize:15, opacity:.75, marginTop:6 }},"days remaining"),over<70&&dl<30&&(
+                React.createElement("p",{style:{ marginTop:14, background:"rgba(255,255,255,.18)", borderRadius:14,
+                  padding:"12px 16px", fontSize:14, lineHeight:1.5 }},100-over,"% remaining — consider increasing daily study time.")
+              ))
+          );
+        })()))
+  );
+};
+
+/* ═══════════════════════════════════════════════════════
+   SETTINGS — Toggle + Row now module-level (were inside SettingsScreen — FIXED)
+═══════════════════════════════════════════════════════ */
+const Toggle = memo(({ on, C })=>(
+  React.createElement("div",{style:{ width:48, height:28, borderRadius:14, background:on?C.blue:C.card3,
+    position:"relative", transition:"background .2s", flexShrink:0 }},React.createElement("div",{style:{ position:"absolute", top:3, left:on?"auto":3, right:on?3:"auto",
+      width:22, height:22, borderRadius:"50%", background:"#fff",
+      transition:"all .22s", boxShadow:"0 1px 4px rgba(0,0,0,.25)" }}))
+));
+
+const SRow = memo(({ icon, label, sub, onClick, right, C })=>(
+  React.createElement("div",{onClick:onClick,style:{ display:"flex", alignItems:"center", gap:14, padding:"16px 0",
+      borderBottom:`1px solid ${C.sep}`, cursor:onClick?"pointer":"default", minHeight:60 }},React.createElement("div",{style:{ width:36, height:36, borderRadius:10, background:C.card2,
+      display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }},React.createElement(Ic,{n:icon,size:18,color:C.text2,sw:1.6})),React.createElement("div",{style:{ flex:1 }},React.createElement("div",{style:{ fontSize:16, fontWeight:500, color:C.text }},label),sub&&React.createElement("div",{style:{ fontSize:13, color:C.text2, marginTop:2 }},sub)),right||(onClick&&React.createElement(Ic,{n:"chevR",size:16,color:C.text3,sw:2})))
+));
+
+const SettingsScreen = ()=>{
+  const s         = useStore();
+  const C         = useMemo(()=>T(s.settings.dark),[s.settings.dark]);
+  const importRef = useRef();
+  const [editing, setEditing] = useState(false);
+  const [pf, setPf]           = useState(()=>s.profile);
+
+  useEffect(()=>{ if(!editing) setPf(s.profile); },[s.profile,editing]);
+
+  const exportData = useCallback(()=>{
+    const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download=`syllabus_${toDay()}.json`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  },[s]);
+
+  const importData = useCallback(e=>{
+    const file=e.target.files?.[0]; if(!file) return;
+    const r=new FileReader();
+    r.onload=ev=>{
+      try {
+        const d=JSON.parse(ev.target.result);
+        if(!d||!Array.isArray(d.subjects)) throw new Error();
+        dispatch(()=>({...INIT,...d,settings:{...INIT.settings,...(d.settings||{})}}));
+      } catch { alert("Invalid backup file."); }
+    };
+    r.readAsText(file);
+    e.target.value="";
+  },[]);
+
+  const saveProfile = useCallback(()=>{
+    dispatch(st=>({...st,profile:pf})); setEditing(false);
+  },[pf]);
+
+  const toggleDark = useCallback(()=>
+    dispatch(st=>({...st,settings:{...st.settings,dark:!st.settings.dark}})),[]);
+
+  return(
+    React.createElement("div",{style:{ background:C.bg, minHeight:"100vh", paddingBottom:100 }},React.createElement("header",{style:{ position:"sticky", top:0, zIndex:50, background:C.nav,
+        backdropFilter:"blur(24px) saturate(180%)", WebkitBackdropFilter:"blur(24px) saturate(180%)",
+        padding:"18px 20px 14px", borderBottom:`1px solid ${C.sep}` }},React.createElement("h1",{style:{ fontSize:26, fontWeight:800, letterSpacing:"-.7px", color:C.text }},"Settings")),React.createElement("main",{style:{ padding:"18px 16px" }},/* Exam Profile */,React.createElement("div",{style:{ background:C.card, borderRadius:20, padding:"18px 20px", marginBottom:14, border:`1px solid ${C.sep}` }},React.createElement("p",{style:{ fontSize:11, fontWeight:700, color:C.text2, letterSpacing:.6, textTransform:"uppercase", marginBottom:14 }},"Exam Profile"),editing?(
+            React.createElement(React.Fragment,null,React.createElement(Fld,{label:"Exam Name",C:C},React.createElement(Inp,{C:C,value:pf.examName||"",onChange:e=>setPf(p=>({...p,examName:e.target.value})),inputMode:"text"})),React.createElement(Fld,{label:"Exam Date",C:C},React.createElement(Inp,{C:C,type:"date",value:pf.examDate||"",onChange:e=>setPf(p=>({...p,examDate:e.target.value}))})),React.createElement("div",{style:{ display:"flex", gap:10 }},React.createElement("button",{onClick:saveProfile,style:{ flex:1, padding:"14px", background:C.blue, color:"#fff",
+                    border:"none", borderRadius:14, fontSize:15, fontWeight:600, cursor:"pointer", minHeight:50 }},"Save"),React.createElement("button",{onClick:()=>{ setPf(s.profile); setEditing(false); },style:{ flex:1, padding:"14px", background:C.card2, color:C.text2,
+                    border:`1px solid ${C.sep}`, borderRadius:14, fontSize:15, cursor:"pointer", minHeight:50 }},"Cancel")))
+          ):(
+            React.createElement("div",{style:{ display:"flex", justifyContent:"space-between", alignItems:"center" }},React.createElement("div",null,React.createElement("div",{style:{ fontSize:18, fontWeight:700, color:C.text }},s.profile.examName||"Not set"),React.createElement("div",{style:{ fontSize:14, color:C.text2, marginTop:4 }},s.profile.examDate||"No date set")),React.createElement("button",{onClick:()=>{ setPf(s.profile); setEditing(true); },style:{ display:"flex", alignItems:"center", gap:6, padding:"9px 14px",
+                  background:C.card2, border:`1px solid ${C.sep}`, borderRadius:12,
+                  fontSize:14, fontWeight:500, color:C.text2, cursor:"pointer", minHeight:44 }},React.createElement(Ic,{n:"edit",size:14,color:C.text2,sw:1.8}),"Edit"))
+          )),/* Options */,React.createElement("div",{style:{ background:C.card, borderRadius:20, padding:"0 20px", marginBottom:14, border:`1px solid ${C.sep}` }},React.createElement(SRow,{icon:s.settings.dark?"sun":"moon",label:s.settings.dark?"Light Mode":"Dark Mode",sub:`Currently ${s.settings.dark?"dark":"light"}`,onClick:toggleDark,right:React.createElement(Toggle,{on:s.settings.dark,C:C}),C:C}),React.createElement(SRow,{icon:"download",label:"Export Backup",sub:"Save all data as JSON",onClick:exportData,C:C}),React.createElement("div",{onClick:()=>importRef.current?.click(),style:{ display:"flex", alignItems:"center", gap:14, padding:"16px 0", cursor:"pointer", minHeight:60 }},React.createElement("div",{style:{ width:36, height:36, borderRadius:10, background:C.card2,
+              display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }},React.createElement(Ic,{n:"upload",size:18,color:C.text2,sw:1.6})),React.createElement("div",{style:{ flex:1 }},React.createElement("div",{style:{ fontSize:16, fontWeight:500, color:C.text }},"Import Backup"),React.createElement("div",{style:{ fontSize:13, color:C.text2, marginTop:2 }},"Restore from a JSON file")),React.createElement(Ic,{n:"chevR",size:16,color:C.text3,sw:2})),React.createElement("input",{ref:importRef,type:"file",accept:".json",style:{ display:"none" },onChange:importData})),/* Danger */,React.createElement("div",{style:{ background:C.card, borderRadius:20, padding:"0 20px", border:`1px solid ${C.sep}`, marginBottom:24 }},React.createElement("div",{style:{ padding:"18px 0", display:"flex", alignItems:"center", gap:14, minHeight:60 }},React.createElement("div",{style:{ width:36, height:36, borderRadius:10, background:C.red+"18",
+              display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }},React.createElement(Ic,{n:"trash",size:18,color:C.red,sw:1.6})),React.createElement("span",{style:{ fontSize:16, fontWeight:500, color:C.red, flex:1 }},"Reset All Data"),React.createElement(DelBtn,{onDelete:()=>dispatch(()=>({...INIT,onboarded:true,profile:s.profile})),size:16}))),React.createElement("p",{style:{ fontSize:13, color:C.text2, textAlign:"center", lineHeight:1.7 }},"All data stored locally on your device.",React.createElement("br",null),"Export regularly to keep backups.")))
+  );
+};
+
+/* ═══════════════════════════════════════════════════════
+   NAV + ROOT
+═══════════════════════════════════════════════════════ */
+const NAV = [
+  { id:"today",    icon:"home",    label:"Today"    },
+  { id:"syllabus", icon:"book",    label:"Syllabus" },
+  { id:"revise",   icon:"refresh", label:"Revise"   },
+  { id:"stats",    icon:"chart",   label:"Stats"    },
+  { id:"settings", icon:"cog",     label:"Settings" },
+];
+
+const SCREENS = {
+  today:    TodayScreen,
+  syllabus: SyllabusScreen,
+  revise:   ReviseScreen,
+  stats:    StatsScreen,
+  settings: SettingsScreen,
+};
+
+function App(){
+  const s   = useStore();
+  const C   = useMemo(()=>T(s.settings.dark),[s.settings.dark]);
+  const [tab,setTab] = useState("today");
+
+  // Flip overdue topics once on mount
+  useEffect(()=>{
+    const overdue = flatAll(_st.subjects).filter(t=>isDue(t)&&t.status==="studied");
+    if(overdue.length===0) return;
+    dispatch(st=>({...st, subjects:st.subjects.map(sub=>({
+      ...sub, chapters:sub.chapters.map(ch=>({
+        ...ch, topics:ch.topics.map(t=>isDue(t)&&t.status==="studied"?{...t,status:"do-revision"}:t),
+      })),
+    }))}));
+  },[]);
+
+  const revCount = useMemo(()=>flatAll(s.subjects).filter(t=>isDue(t)).length,[s.subjects]);
+
+  if(!s.onboarded) return React.createElement(React.Fragment,null,React.createElement(G,null),React.createElement(Onboarding,null));
+
+  const Screen = SCREENS[tab]||TodayScreen;
+
+  return(
+    React.createElement(React.Fragment,null,React.createElement(G,null),React.createElement("div",{style:{ maxWidth:430, margin:"0 auto", minHeight:"100vh", background:C.bg }},React.createElement("div",{key:tab,style:{ animation:"fadeUp .18s ease" }},React.createElement(Screen,null)),React.createElement("nav",{"aria-label":"Main navigation",style:{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)",
+            width:"100%", maxWidth:430, background:C.nav,
+            backdropFilter:"blur(24px) saturate(180%)", WebkitBackdropFilter:"blur(24px) saturate(180%)",
+            borderTop:`1px solid ${C.sep}`, display:"flex",
+            padding:"10px 0", zIndex:200,
+            paddingBottom:"calc(10px + env(safe-area-inset-bottom,0px))" }},NAV.map(item=>{
+            const active=tab===item.id;
+            return(
+              React.createElement("button",{key:item.id,onClick:()=>setTab(item.id),"aria-label":item.label,"aria-current":active?"page":undefined,style:{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4,
+                  background:"none", border:"none", cursor:"pointer", padding:"4px 0",
+                  position:"relative", minHeight:52 }},React.createElement("div",{style:{ width:34, height:34, borderRadius:11,
+                  background:active?C.blue+"18":"transparent",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  transition:"background .18s" }},React.createElement(Ic,{n:item.icon,size:21,color:active?C.blue:C.text2,sw:active?2.2:1.6})),item.id==="revise"&&revCount>0&&(
+                  React.createElement("div",{style:{ position:"absolute", top:0, left:"calc(50% + 6px)",
+                    width:18, height:18, background:C.red, borderRadius:"50%",
+                    fontSize:10, fontWeight:800, color:"#fff",
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    border:`2px solid ${C.bg}` }},revCount>9?"9+":revCount)
+                ),React.createElement("span",{style:{ fontSize:10, fontWeight:active?700:400,
+                  color:active?C.blue:C.text2, transition:"color .18s" }},item.label))
+            );
+          }))))
+  );
+}
+// ─────────────────────────────────────────────────────────
+// Mount
+const _root = ReactDOM.createRoot(document.getElementById('root'));
+_root.render(React.createElement(App));
+
+// Hide splash once React has painted
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  const s = document.getElementById('splash');
+  if (s) { s.classList.add('out'); setTimeout(() => s.remove(), 400); }
+}));
+</script>
+</body>
+</html>
