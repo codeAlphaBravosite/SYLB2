@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Syllabus Tracker"/>
+  <meta name="theme-color" content="#007AFF"/>
+  <title>Syllabus Tracker</title>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="apple-touch-icon" href="apple-touch-icon.png"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body,#root{height:100%;overscroll-behavior:none}
+    body{background:#007AFF}
+    #splash{position:fixed;inset:0;background:#007AFF;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity .3s ease}
+    #splash.out{opacity:0;pointer-events:none}
+    #splash svg{animation:pulse 1.3s ease-in-out infinite}
+    #splash p{color:rgba(255,255,255,.8);font-size:15px;margin-top:18px;font-family:system-ui,sans-serif;font-weight:500}
+    @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+  </style>
+</head>
+<body>
+<div id="splash">
+  <svg width="88" height="88" viewBox="0 0 100 100" fill="none">
+    <rect width="100" height="100" rx="22" fill="rgba(255,255,255,.18)"/>
+    <rect x="22" y="20" width="26" height="60" rx="4" fill="white"/>
+    <rect x="52" y="20" width="26" height="60" rx="4" fill="white"/>
+    <rect x="47" y="20" width="6" height="60" fill="#007AFF"/>
+  </svg>
+  <p>Syllabus Tracker</p>
+</div>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script>
+if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+const{useState,useEffect,useRef,useCallback,useMemo,memo}=React;
+const ce=React.createElement;
+
+/* ─── STYLES ─────────────────────────────────────────────────── */
+const G=memo(()=>ce('style',null,`
+  @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800;900&display=swap');
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body,#root{height:100%;overscroll-behavior:none;-webkit-overflow-scrolling:touch}
+  body{font-family:'Geist',system-ui,sans-serif;background:#F2F2F7}
+  button,input,textarea,select{font-family:inherit}
+  ::-webkit-scrollbar{display:none}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes toastOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(12px)}}
+  @keyframes pop{0%{transform:scale(.7)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+`));
+
+/* ─── ICONS ──────────────────────────────────────────────────── */
+const ICONS={
+  home:'M3 10.5L12 3l9 7.5V20a1 1 0 01-1 1H14v-5h-4v5H4a1 1 0 01-1-1z',
+  book:['M4 19.5A2.5 2.5 0 016.5 17H20','M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z'],
+  refresh:['M2 12a10 10 0 1010-10c-2.76 0-5.26 1.12-7.07 2.93L2 8','M2 2v6h6'],
+  chart:{lines:['18 20 18 10','12 20 12 4','6 20 6 14']},
+  cog:['circle:12,12,3','M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z'],
+  plus:{lines:['12 5 12 19','5 12 19 12']},
+  chevD:'M6 9l6 6 6-6',
+  chevR:'M9 18l6-6-6-6',
+  trash:['poly:3 6 5 6 21 6','M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6','M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2'],
+  check:'M20 6L9 17 4 12',
+  edit:['M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7','M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z'],
+  close:{lines:['18 6 6 18','6 6 18 18']},
+  sun:{circle:'12,12,5',lines:['12 1 12 3','12 21 12 23','4.22 4.22 5.64 5.64','18.36 18.36 19.78 19.78','1 12 3 12','21 12 23 12','4.22 19.78 5.64 18.36','18.36 5.64 19.78 4.22']},
+  moon:'M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z',
+  download:['M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4','poly:7 10 12 15 17 10','M12 15V3'],
+  upload:['M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4','poly:17 8 12 3 7 8','M12 3v12'],
+  clock:['circle:12,12,10','M12 6v6l4 2'],
+  flag:['M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z','M4 22V15'],
+  link:['M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71','M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71'],
+  warn:['M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z','M12 9v4','M12 17h.01'],
+  repeat:['M17 1l4 4-4 4','M3 11V9a4 4 0 014-4h14','M7 23l-4-4 4-4','M21 13v2a4 4 0 01-4 4H3'],
+  sort:['M3 6h18','M7 12h10','M11 18h2'],
+  note:['M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7','M14 2l6 6','M14 2v6h6','M9 12h6','M9 16h4'],
+  star:['M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z'],
+  book2:['M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z','M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z'],
+};
+const Ic=memo(({n,size=22,color='currentColor',sw=1.8})=>{
+  const p={fill:'none',stroke:color,strokeWidth:sw,strokeLinecap:'round',strokeLinejoin:'round'};
+  const ic=ICONS[n];if(!ic)return null;
+  const paths=[];
+  const items=Array.isArray(ic)?ic:[ic];
+  items.forEach((d,i)=>{
+    if(typeof d==='string'){
+      if(d.startsWith('poly:'))paths.push(ce('polyline',{...p,key:i,points:d.slice(5)}));
+      else if(d.startsWith('circle:')){const[cx,cy,r]=d.slice(7).split(',');paths.push(ce('circle',{...p,key:i,cx,cy,r}));}
+      else paths.push(ce('path',{...p,key:i,d}));
+    }else if(d&&d.lines){d.lines.forEach((l,j)=>{const[x1,y1,x2,y2]=l.split(' ');paths.push(ce('line',{...p,key:j,x1,y1,x2,y2}));});}
+    else if(d&&d.circle){const[cx,cy,r]=d.circle.split(',');paths.push(ce('circle',{...p,key:'c',cx,cy,r}));if(d.lines)d.lines.forEach((l,j)=>{const[x1,y1,x2,y2]=l.split(' ');paths.push(ce('line',{...p,key:j,x1,y1,x2,y2}));});}
+  });
+  return ce('svg',{viewBox:'0 0 24 24',width:size,height:size,'aria-hidden':'true',style:{display:'block',flexShrink:0}},paths);
+});
+
+/* ─── CONFIG ─────────────────────────────────────────────────── */
+const STATUS={
+  'not-started':{label:'Not Started',color:'#8E8E93',bg:'#8E8E9322'},
+  'studying':   {label:'Studying',   color:'#FF9500',bg:'#FF950022'},
+  'studied':    {label:'Studied',    color:'#34C759',bg:'#34C75922'},
+  'do-revision':{label:'Do Revision',color:'#FF3B30',bg:'#FF3B3022'},
+};
+const PRIORITY={
+  'high':    {label:'High',    fullLabel:'High Weightage',color:'#FF3B30',bg:'#FF3B3018'},
+  'normal':  {label:'Normal',  fullLabel:'Normal',        color:'#007AFF',bg:'#007AFF18'},
+  'optional':{label:'Optional',fullLabel:'Optional',      color:'#8E8E93',bg:'#8E8E9318'},
+};
+const COLORS=['#007AFF','#FF3B30','#34C759','#FF9500','#AF52DE','#5AC8FA','#FF2D55','#00C7BE','#FF6B00','#636366'];
+const REV_OPTIONS=[{days:3,label:'3 days'},{days:5,label:'5 days'},{days:7,label:'7 days'},{days:14,label:'14 days'},{days:21,label:'21 days'}];
+const PRI_ORD={high:3,normal:2,optional:1};
+const ST_ORD={'not-started':0,'studying':1,'do-revision':2,'studied':3};
+const TH={
+  light:{bg:'#F2F2F7',card:'#FFFFFF',card2:'#F2F2F7',card3:'#E5E5EA',text:'#000000',text2:'#6C6C70',text3:'#C7C7CC',sep:'#E5E5EA',nav:'rgba(255,255,255,.95)',blue:'#007AFF',red:'#FF3B30',green:'#34C759',orange:'#FF9500'},
+  dark: {bg:'#000000',card:'#1C1C1E',card2:'#2C2C2E',card3:'#3A3A3C',text:'#FFFFFF',text2:'#8E8E93',text3:'#48484A',sep:'#2C2C2E',nav:'rgba(0,0,0,.95)',  blue:'#0A84FF',red:'#FF453A',green:'#30D158',orange:'#FF9F0A'},
+};
+const T=dark=>dark?TH.dark:TH.light;
+
+/* ─── UTILS ──────────────────────────────────────────────────── */
+const uid=()=>typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():(Math.random().toString(36).slice(2)+Date.now().toString(36));
+const toDay=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+const daysTo=dateStr=>{
+  if(!dateStr)return null;
+  const[y,m,d]=dateStr.split('-').map(Number);
+  const now=new Date();
+  return Math.ceil((new Date(y,m-1,d)-new Date(now.getFullYear(),now.getMonth(),now.getDate()))/86400000);
+};
+const phaseOf=d=>{
+  if(d==null)return null;
+  if(d<0) return{label:'Exam complete \u{1F393}',color:'#34C759'};
+  if(d===0)return{label:'Exam day! \u{1F3AF}',color:'#FF3B30'};
+  if(d>60) return{label:'Learning Phase',color:'#007AFF'};
+  if(d>30) return{label:'Consolidation',color:'#FF9500'};
+  if(d>14) return{label:'Revision Mode',color:'#AF52DE'};
+  return      {label:'Final Sprint \u{1F525}',color:'#FF3B30'};
+};
+const isDue=(t,revDays=7)=>{
+  if(t.status!=='studied'||!t.studiedDate)return false;
+  const[y,m,d]=t.studiedDate.split('-').map(Number);
+  return new Date()>=new Date(y,m-1,d+revDays);
+};
+const revDaysLeft=(t,revDays=7)=>{
+  if(t.status!=='studied'||!t.studiedDate)return null;
+  const[y,m,d]=t.studiedDate.split('-').map(Number);
+  const due=new Date(y,m-1,d+revDays);
+  const now=new Date();
+  const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  return Math.ceil((due-today)/86400000);
+};
+const pct=topics=>!topics.length?0:Math.round(topics.filter(t=>t.status==='studied'||t.status==='do-revision').length/topics.length*100);
+const flatAll=subjects=>subjects.flatMap(s=>s.chapters.flatMap(c=>c.topics.map(t=>({...t,subjectId:s.id,subjectName:s.name,subjectColor:s.color,chapterId:c.id,chapterName:c.name}))));
+const validateImport=d=>{
+  if(!d||typeof d!=='object'||!Array.isArray(d.subjects))return false;
+  for(const s of d.subjects){
+    if(!s.id||typeof s.name!=='string'||!Array.isArray(s.chapters))return false;
+    for(const c of s.chapters){
+      if(!c.id||typeof c.name!=='string'||!Array.isArray(c.topics))return false;
+      for(const t of c.topics){if(!t.id||typeof t.name!=='string')return false;}
+    }
+  }
+  return true;
+};
+const applySort=(topics,key)=>{
+  if(!key||key==='manual')return topics;
+  return[...topics].sort((a,b)=>{
+    if(key==='priority')return(PRI_ORD[b.priority]||2)-(PRI_ORD[a.priority]||2);
+    if(key==='status')return(ST_ORD[a.status]||0)-(ST_ORD[b.status]||0);
+    if(key==='az')return a.name.localeCompare(b.name,undefined,{sensitivity:'base'});
+    return 0;
+  });
+};
+
+/* ─── STORE ──────────────────────────────────────────────────── */
+const STORE_KEY='st_v11';
+const INIT={onboarded:false,profile:{examName:'',examDate:''},subjects:[],settings:{dark:false,revDays:7}};
+const safeParse=raw=>{try{const d=JSON.parse(raw);return d&&typeof d==='object'?{...INIT,...d,settings:{...INIT.settings,...(d.settings||{})}}:null;}catch{return null;}};
+const loadState=()=>safeParse(localStorage.getItem(STORE_KEY))||safeParse(localStorage.getItem('st_v10'))||{...INIT};
+let _st=loadState();
+const _listeners=new Set();
+let _saveTimer=null;
+const persist=()=>{try{localStorage.setItem(STORE_KEY,JSON.stringify(_st));}catch{}};
+const dispatch=fn=>{_st=fn(_st);clearTimeout(_saveTimer);_saveTimer=setTimeout(persist,300);_listeners.forEach(f=>f());};
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){clearTimeout(_saveTimer);persist();}});
+const useStore=()=>{
+  const[,tick]=useState(0);
+  useEffect(()=>{const f=()=>tick(n=>n+1);_listeners.add(f);return()=>_listeners.delete(f);},[]);
+  return _st;
+};
+const setTopicStatus=(sId,cId,tId,status)=>dispatch(st=>({
+  ...st,subjects:st.subjects.map(sub=>sub.id!==sId?sub:{
+    ...sub,chapters:sub.chapters.map(ch=>ch.id!==cId?ch:{
+      ...ch,topics:ch.topics.map(t=>t.id!==tId?t:{
+        ...t,status,studiedDate:status==='studied'?(t.studiedDate||toDay()):null
+      })
+    })
+  })
+}));
+
+/* ─── TOAST + UNDO ───────────────────────────────────────────── */
+const _toastListeners=new Set();
+let _toastId=0;
+const showToast=(msg,action,onAction)=>{const id=++_toastId;_toastListeners.forEach(f=>f({id,msg,action,onAction}));};
+let _undoSnapshot=null;
+const dispatchWithUndo=(fn,msg)=>{
+  _undoSnapshot=JSON.parse(JSON.stringify(_st));
+  dispatch(fn);
+  showToast(msg,'Undo',()=>{if(_undoSnapshot){_st=_undoSnapshot;clearTimeout(_saveTimer);persist();_listeners.forEach(f=>f());_undoSnapshot=null;}});
+};
+const Toast=()=>{
+  const[toasts,setToasts]=useState([]);
+  useEffect(()=>{
+    const add=t=>{
+      setToasts(p=>[...p,{...t,out:false}]);
+      setTimeout(()=>setToasts(p=>p.map(x=>x.id===t.id?{...x,out:true}:x)),3600);
+      setTimeout(()=>setToasts(p=>p.filter(x=>x.id!==t.id)),4100);
+    };
+    _toastListeners.add(add);return()=>_toastListeners.delete(add);
+  },[]);
+  if(!toasts.length)return null;
+  return ce('div',{role:'status','aria-live':'polite',style:{position:'fixed',bottom:'calc(90px + env(safe-area-inset-bottom,0px))',left:'50%',transform:'translateX(-50%)',zIndex:900,display:'flex',flexDirection:'column',gap:8,alignItems:'center',width:'calc(100% - 32px)',maxWidth:398,pointerEvents:'none'}},
+    toasts.map(t=>ce('div',{key:t.id,style:{background:'rgba(28,28,30,.97)',backdropFilter:'blur(20px)',color:'#fff',borderRadius:14,padding:'13px 18px',fontSize:15,fontWeight:500,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16,width:'100%',boxShadow:'0 4px 24px rgba(0,0,0,.3)',animation:t.out?'toastOut .45s ease forwards':'toastIn .28s ease',pointerEvents:'all'}},
+      ce('span',null,t.msg),
+      t.action&&ce('button',{onClick:()=>{t.onAction&&t.onAction();setToasts(p=>p.filter(x=>x.id!==t.id));},style:{background:'none',border:'none',color:'#0A84FF',fontSize:15,fontWeight:700,cursor:'pointer',padding:0,whiteSpace:'nowrap'}},t.action),
+    ))
+  );
+};
+
+/* ─── DELETE PORTAL (never clipped) ─────────────────────────── */
+const _delListeners=new Set();
+const showDelConfirm=(label,onConfirm)=>_delListeners.forEach(f=>f({label,onConfirm}));
+const DelConfirmOverlay=()=>{
+  const[state,setState]=useState(null);
+  useEffect(()=>{const h=s=>setState(s);_delListeners.add(h);return()=>_delListeners.delete(h);},[]);
+  useEffect(()=>{
+    if(!state)return;
+    const esc=e=>{if(e.key==='Escape')setState(null);};
+    document.addEventListener('keydown',esc);return()=>document.removeEventListener('keydown',esc);
+  },[state]);
+  if(!state)return null;
+  return ce('div',{onClick:()=>setState(null),style:{position:'fixed',inset:0,zIndex:800,display:'flex',alignItems:'flex-end',justifyContent:'center',padding:'0 16px calc(104px + env(safe-area-inset-bottom,0px))'}},
+    ce('div',{style:{position:'absolute',inset:0,background:'rgba(0,0,0,.5)',animation:'fadeIn .18s'}}),
+    ce('div',{onClick:e=>e.stopPropagation(),role:'alertdialog','aria-modal':'true',style:{position:'relative',background:'#1C1C1E',borderRadius:18,padding:'20px 20px 16px',width:'100%',maxWidth:390,boxShadow:'0 8px 40px rgba(0,0,0,.5)',animation:'fadeUp .22s ease'}},
+      ce('p',{style:{fontSize:16,fontWeight:700,color:'#fff',marginBottom:6}},'Delete this item?'),
+      ce('p',{style:{fontSize:14,color:'#8E8E93',marginBottom:20,lineHeight:1.5}},'"'+state.label+'" will be removed. You can undo immediately after.'),
+      ce('div',{style:{display:'flex',gap:10}},
+        ce('button',{onClick:()=>setState(null),style:{flex:1,padding:14,background:'#2C2C2E',color:'#fff',border:'none',borderRadius:12,fontSize:16,fontWeight:600,cursor:'pointer',minHeight:50}},'Cancel'),
+        ce('button',{onClick:()=>{state.onConfirm();setState(null);},style:{flex:1,padding:14,background:'#FF3B30',color:'#fff',border:'none',borderRadius:12,fontSize:16,fontWeight:700,cursor:'pointer',minHeight:50}},'Delete'),
+      ),
+    ),
+  );
+};
+const DelBtn=memo(({onDelete,size=18,label='item'})=>{
+  const fire=useCallback(e=>{e.stopPropagation();showDelConfirm(label,onDelete);},[label,onDelete]);
+  return ce('button',{onClick:fire,'aria-label':'Delete '+label,style:{background:'transparent',border:'none',cursor:'pointer',padding:8,display:'flex',alignItems:'center',borderRadius:8,minHeight:44,minWidth:44,justifyContent:'center'}},
+    ce(Ic,{n:'trash',size,color:'#FF453A',sw:1.6}));
+});
+
+/* ─── CONFIRM MODAL ──────────────────────────────────────────── */
+const ConfirmModal=memo(({open,title,msg,onConfirm,onCancel,C,confirmLabel='Yes',danger=true})=>{
+  const ref=useRef(null);
+  useEffect(()=>{
+    if(!open)return;
+    setTimeout(()=>{const b=ref.current&&ref.current.querySelector('button');if(b)b.focus();},60);
+    const esc=e=>{if(e.key==='Escape')onCancel();};
+    document.addEventListener('keydown',esc);return()=>document.removeEventListener('keydown',esc);
+  },[open]);
+  if(!open)return null;
+  return ce('div',{style:{position:'fixed',inset:0,zIndex:700,display:'flex',alignItems:'center',justifyContent:'center',padding:24},onClick:onCancel},
+    ce('div',{style:{position:'absolute',inset:0,background:'rgba(0,0,0,.65)',animation:'fadeIn .18s'}}),
+    ce('div',{ref,role:'alertdialog','aria-modal':'true',onClick:e=>e.stopPropagation(),style:{position:'relative',background:C.card,borderRadius:22,padding:28,width:'100%',maxWidth:340,boxShadow:'0 20px 60px rgba(0,0,0,.4)',animation:'fadeUp .2s ease'}},
+      ce('h2',{style:{fontSize:20,fontWeight:800,color:C.text,marginBottom:10}},title),
+      ce('p',{style:{fontSize:15,color:C.text2,lineHeight:1.6,marginBottom:24}},msg),
+      ce('div',{style:{display:'flex',gap:10}},
+        ce('button',{onClick:onCancel,style:{flex:1,padding:14,background:C.card2,color:C.text2,border:'1px solid '+C.sep,borderRadius:14,fontSize:15,cursor:'pointer',fontWeight:500,minHeight:50}},'Cancel'),
+        ce('button',{onClick:onConfirm,style:{flex:1,padding:14,background:danger?'#FF3B30':C.blue,color:'#fff',border:'none',borderRadius:14,fontSize:15,fontWeight:700,cursor:'pointer',minHeight:50}},confirmLabel),
+      ),
+    ),
+  );
+});
+
+/* ─── SHEET ──────────────────────────────────────────────────── */
+const Sheet=memo(({open,onClose,title,children,C})=>{
+  const ref=useRef(null);const closeRef=useRef(onClose);
+  useEffect(()=>{closeRef.current=onClose;});
+  useEffect(()=>{
+    if(!open||!ref.current)return;
+    const el=ref.current;
+    const SEL='button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])';
+    const get=()=>[...el.querySelectorAll(SEL)];
+    setTimeout(()=>{const f=get();if(f[0])f[0].focus();},60);
+    const trap=e=>{
+      const f=get();if(!f.length)return;
+      if(e.key==='Tab'){if(e.shiftKey){if(document.activeElement===f[0]){e.preventDefault();f[f.length-1].focus();}}else{if(document.activeElement===f[f.length-1]){e.preventDefault();f[0].focus();}}}
+      if(e.key==='Escape'){e.preventDefault();closeRef.current&&closeRef.current();}
+    };
+    document.addEventListener('keydown',trap);return()=>document.removeEventListener('keydown',trap);
+  },[open]);
+  if(!open)return null;
+  return ce('div',{style:{position:'fixed',inset:0,zIndex:500,display:'flex',flexDirection:'column',justifyContent:'flex-end'},onClick:onClose},
+    ce('div',{style:{position:'absolute',inset:0,background:'rgba(0,0,0,.55)',animation:'fadeIn .2s'}}),
+    ce('div',{ref,role:'dialog','aria-modal':'true','aria-label':title,onClick:e=>e.stopPropagation(),style:{position:'relative',background:C.card,borderRadius:'22px 22px 0 0',maxHeight:'90vh',overflowY:'auto',animation:'sheetUp .28s ease',paddingBottom:'env(safe-area-inset-bottom,0px)'}},
+      ce('div',{style:{display:'flex',justifyContent:'center',padding:'14px 0 0'}},ce('div',{style:{width:36,height:4,borderRadius:99,background:C.card3}})),
+      ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 22px 0'}},
+        ce('span',{style:{fontSize:18,fontWeight:700,color:C.text}},title),
+        ce('button',{onClick:onClose,'aria-label':'Close',style:{background:C.card2,border:'none',borderRadius:'50%',width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}},ce(Ic,{n:'close',size:14,color:C.text2,sw:2})),
+      ),
+      ce('div',{style:{padding:'20px 22px 32px'}},children),
+    ),
+  );
+});
+
+/* ─── PRIMITIVES ──────────────────────────────────────────────── */
+const Ring=memo(({value,color='#007AFF',size=54,sw=5})=>{
+  const r=(size-sw*2)/2,circ=2*Math.PI*r;
+  return ce('svg',{width:size,height:size,'aria-hidden':'true',style:{flexShrink:0,transform:'rotate(-90deg)'}},
+    ce('circle',{cx:size/2,cy:size/2,r,fill:'none',stroke:color+'30',strokeWidth:sw}),
+    ce('circle',{cx:size/2,cy:size/2,r,fill:'none',stroke:color,strokeWidth:sw,strokeDasharray:circ,strokeDashoffset:circ*(1-value/100),strokeLinecap:'round',style:{transition:'stroke-dashoffset .6s ease'}}),
+  );
+});
+const Bar=memo(({value,color='#007AFF',h=4,C})=>ce('div',{style:{background:C.card3,borderRadius:99,height:h,overflow:'hidden'}},ce('div',{style:{width:value+'%',background:color,height:'100%',borderRadius:99,transition:'width .5s ease'}})));
+const Badge=memo(({label,color,bg})=>ce('span',{style:{fontSize:11,fontWeight:700,color,background:bg,padding:'3px 9px',borderRadius:99,whiteSpace:'nowrap',display:'inline-block',letterSpacing:.2}},label));
+const Fld=({label,children,C})=>ce('div',{style:{marginBottom:20}},ce('div',{style:{fontSize:11,fontWeight:700,color:C.text2,letterSpacing:.6,textTransform:'uppercase',marginBottom:10}},label),children);
+const Inp=({C,style:s={},...r})=>ce('input',{...r,style:{width:'100%',padding:'14px 16px',borderRadius:14,border:'1.5px solid '+C.sep,fontSize:16,background:C.card2,color:C.text,outline:'none',WebkitAppearance:'none',...s}});
+const DarkToggle=memo(({on,C,onClick})=>ce('button',{role:'switch','aria-checked':on,'aria-label':'Toggle dark mode',onClick,style:{width:51,height:31,borderRadius:99,background:on?C.blue:C.card3,position:'relative',transition:'background .2s',flexShrink:0,border:'none',cursor:'pointer',padding:0,minWidth:51}},ce('div',{style:{position:'absolute',top:3,left:on?22:3,width:25,height:25,borderRadius:'50%',background:'#fff',transition:'left .22s',boxShadow:'0 1px 4px rgba(0,0,0,.25)'}})));
+const SRow=memo(({icon,label,sub,onClick,right,C})=>ce('div',{onClick,style:{display:'flex',alignItems:'center',gap:14,padding:'16px 0',borderBottom:'1px solid '+C.sep,cursor:onClick?'pointer':'default',minHeight:60}},
+  ce('div',{style:{width:36,height:36,borderRadius:10,background:C.card2,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}},ce(Ic,{n:icon,size:18,color:C.text2,sw:1.6})),
+  ce('div',{style:{flex:1,minWidth:0}},ce('div',{style:{fontSize:16,fontWeight:500,color:C.text}},label),sub&&ce('div',{style:{fontSize:13,color:C.text2,marginTop:2}},sub)),
+  right||(onClick&&ce(Ic,{n:'chevR',size:16,color:C.text3,sw:2})),
+));
+
+/* ─── STATUS ROW ─────────────────────────────────────────────── */
+const StatusRow=memo(({currentStatus,isRevDue,onChange,C})=>{
+  const eff=isRevDue?'do-revision':currentStatus;
+  return ce('div',{style:{display:'flex',gap:6,flexWrap:'wrap',paddingTop:12,borderTop:'1px solid '+C.sep}},
+    Object.entries(STATUS).map(([k,v])=>{
+      const active=eff===k;
+      return ce('button',{key:k,onClick:e=>{e.stopPropagation();onChange(k);},'aria-pressed':active,style:{padding:'8px 13px',borderRadius:99,fontSize:12,fontWeight:600,cursor:'pointer',border:'1.5px solid '+(active?v.color:C.sep),background:active?v.color:'transparent',color:active?'#fff':C.text2,transition:'all .15s',whiteSpace:'nowrap',minHeight:40}},v.label);
+    }),
+  );
+});
+
+/* ─── INFO CHIP ──────────────────────────────────────────────── */
+/* Small icon+label pill used inside cards for at-a-glance info  */
+const Chip=memo(({icon,label,color,bg,href,onClick})=>{
+  const base={display:'inline-flex',alignItems:'center',gap:4,fontSize:11,fontWeight:600,color:color,background:bg||color+'18',padding:'4px 9px',borderRadius:99,whiteSpace:'nowrap',textDecoration:'none',border:'none',cursor:href||onClick?'pointer':'default',lineHeight:1};
+  if(href)return ce('a',{href,target:'_blank',rel:'noopener noreferrer',onClick,style:base},icon&&ce(Ic,{n:icon,size:10,color,sw:2}),label);
+  return ce('span',{onClick,style:base},icon&&ce(Ic,{n:icon,size:10,color,sw:2}),label);
+});
+
+/* ─── TOPIC CARD (Syllabus) ──────────────────────────────────── */
+const TopicCard=memo(({topic,subjectId,chapterId,subjectName,chapterName,subjectColor,onTap,onDelete,dark,revDays=7,editMode=false,showSubject=true})=>{
+  const C=T(dark);
+  const due=isDue(topic,revDays);
+  const eff=due?'do-revision':topic.status;
+  const st=STATUS[eff]||STATUS['not-started'];
+  const pri=PRIORITY[topic.priority||'normal'];
+  const done=topic.status==='studied'||topic.status==='do-revision';
+  const daysLeft=revDaysLeft(topic,revDays);
+  const dl=topic.examDate?daysTo(topic.examDate):null;
+  const toggle=useCallback(e=>{e.stopPropagation();setTopicStatus(subjectId,chapterId,topic.id,done?'not-started':'studied');},[subjectId,chapterId,topic.id,done]);
+  const change=useCallback(k=>setTopicStatus(subjectId,chapterId,topic.id,k),[subjectId,chapterId,topic.id]);
+
+  /* Revision countdown chip: urgent=orange≤3d, soon=muted≤revDays, overdue=red */
+  const revChip=due
+    ?ce(Chip,{icon:'warn',label:'Rev Due!',color:C.red})
+    :daysLeft!==null&&daysLeft<=3&&daysLeft>0
+      ?ce(Chip,{icon:'clock',label:'Rev in '+daysLeft+'d',color:C.orange})
+      :daysLeft!==null&&daysLeft>3
+        ?ce(Chip,{icon:'clock',label:'Rev in '+daysLeft+'d',color:C.text3,bg:C.card2})
+        :null;
+
+  /* Deadline chip */
+  const dlChip=dl!==null
+    ?dl<0
+      ?ce(Chip,{icon:'flag',label:'Deadline passed',color:C.text3,bg:C.card2})
+      :dl===0
+        ?ce(Chip,{icon:'flag',label:'Due today!',color:C.red})
+        :dl<=7
+          ?ce(Chip,{icon:'flag',label:'Due in '+dl+'d',color:C.orange})
+          :ce(Chip,{icon:'flag',label:topic.examDate,color:C.text2,bg:C.card2})
+    :null;
+
+  return ce('article',{onClick:onTap,'aria-label':topic.name,style:{background:C.card,borderRadius:16,marginBottom:10,border:'1px solid '+C.sep,boxShadow:dark?'none':'0 2px 8px rgba(0,0,0,.06)',display:'flex',alignItems:'stretch',cursor:onTap?'pointer':'default',overflow:'hidden'}},
+    /* Left status colour strip */
+    ce('div',{style:{width:5,background:st.color,flexShrink:0}}),
+    ce('div',{style:{flex:1,padding:'13px 13px 13px 14px',minWidth:0}},
+
+      /* ── Row 1: breadcrumb + optional delete ── */
+      showSubject&&ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
+        ce('div',{style:{display:'flex',alignItems:'center',gap:5,minWidth:0,flex:1}},
+          ce('div',{style:{width:7,height:7,borderRadius:'50%',background:subjectColor,flexShrink:0}}),
+          ce('span',{style:{fontSize:11,color:C.text2,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},subjectName+' \u203a '+chapterName),
+        ),
+        editMode&&ce('div',{onClick:e=>e.stopPropagation(),style:{flexShrink:0,marginLeft:6}},ce(DelBtn,{onDelete,size:15,label:topic.name})),
+      ),
+
+      /* ── Row 2: checkbox + topic name + delete (no-breadcrumb mode) ── */
+      ce('div',{style:{display:'flex',alignItems:'flex-start',gap:11,marginBottom:10}},
+        ce('button',{onClick:toggle,role:'checkbox','aria-checked':done,'aria-label':done?'Mark not started':'Mark studied',style:{width:30,height:30,borderRadius:8,flexShrink:0,border:'none',cursor:'pointer',marginTop:1,background:done?C.green:'transparent',outline:'2px solid '+(done?C.green:C.card3),display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s',animation:done?'pop .22s ease':'none'}},
+          done&&ce(Ic,{n:'check',size:13,color:'#fff',sw:2.5})),
+        ce('span',{style:{fontSize:15,fontWeight:700,color:done?C.text2:C.text,lineHeight:1.35,flex:1,textDecoration:done&&!due?'line-through':'none',textDecorationColor:C.text3}},topic.name),
+        !showSubject&&editMode&&ce('div',{onClick:e=>e.stopPropagation(),style:{flexShrink:0}},ce(DelBtn,{onDelete,size:15,label:topic.name})),
+      ),
+
+      /* ── Row 3: info chips — status · priority · deadline · revision · resource ── */
+      ce('div',{style:{display:'flex',gap:5,flexWrap:'wrap',alignItems:'center',marginBottom:topic.notes?9:11}},
+        /* Status */
+        ce(Chip,{label:st.label,color:st.color,bg:st.bg}),
+        /* Priority — only show High/Optional, skip Normal to save space */
+        topic.priority&&topic.priority!=='normal'&&ce(Chip,{icon:topic.priority==='high'?'star':'flag',label:pri.label,color:pri.color,bg:pri.bg}),
+        /* Revision chip */
+        revChip,
+        /* Deadline chip */
+        dlChip,
+        /* Resource link */
+        topic.resources&&ce(Chip,{icon:'link',label:'Resource',color:C.blue,href:topic.resources,onClick:e=>e.stopPropagation()}),
+      ),
+
+      /* ── Row 4: notes (1 line, muted) ── */
+      topic.notes&&ce('div',{style:{fontSize:12,color:C.text2,lineHeight:1.5,marginBottom:11,paddingLeft:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+        '\u201c'+topic.notes+'\u201d'),
+
+      /* ── Row 5: status change buttons ── */
+      ce(StatusRow,{currentStatus:topic.status,isRevDue:due,onChange:change,C}),
+    ),
+  );
+});
+
+/* ─── TOPIC ROW (Today screen) ───────────────────────────────── */
+const TopicRow=memo(({t,accentColor,dark,revDays=7})=>{
+  const C=T(dark);
+  const due=isDue(t,revDays);
+  const done=t.status==='studied'||t.status==='do-revision';
+  const eff=due?'do-revision':t.status;
+  const st=STATUS[eff]||STATUS['not-started'];
+  const pri=PRIORITY[t.priority||'normal'];
+  const daysLeft=revDaysLeft(t,revDays);
+  const dl=t.examDate?daysTo(t.examDate):null;
+  const toggle=useCallback(()=>setTopicStatus(t.subjectId,t.chapterId,t.id,done?'not-started':'studied'),[t.subjectId,t.chapterId,t.id,done]);
+  const change=useCallback(k=>setTopicStatus(t.subjectId,t.chapterId,t.id,k),[t.subjectId,t.chapterId,t.id]);
+
+  const revChip=due
+    ?ce(Chip,{icon:'warn',label:'Rev Due!',color:C.red})
+    :daysLeft!==null&&daysLeft<=3&&daysLeft>0
+      ?ce(Chip,{icon:'clock',label:'Rev in '+daysLeft+'d',color:C.orange})
+      :null;
+
+  const dlChip=dl!==null
+    ?dl<=0
+      ?ce(Chip,{icon:'flag',label:dl===0?'Due today!':'Deadline passed',color:dl===0?C.red:C.text3,bg:dl===0?C.red+'18':C.card2})
+      :dl<=7
+        ?ce(Chip,{icon:'flag',label:'Due in '+dl+'d',color:C.orange})
+        :null
+    :null;
+
+  return ce('article',{'aria-label':t.name,style:{background:C.card,borderRadius:16,marginBottom:9,border:'1px solid '+C.sep,display:'flex',alignItems:'stretch',boxShadow:dark?'none':'0 1px 5px rgba(0,0,0,.05)'}},
+    ce('div',{style:{width:4,background:accentColor,flexShrink:0,borderRadius:'16px 0 0 16px'}}),
+    ce('div',{style:{flex:1,padding:'12px 13px 12px 14px',minWidth:0}},
+
+      /* ── Row 1: breadcrumb + status badge ── */
+      ce('div',{style:{display:'flex',alignItems:'center',gap:5,marginBottom:7}},
+        ce('div',{style:{width:6,height:6,borderRadius:'50%',background:t.subjectColor,flexShrink:0}}),
+        ce('span',{style:{fontSize:11,color:C.text2,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}},t.subjectName+' \u203a '+t.chapterName),
+        ce(Chip,{label:st.label,color:st.color,bg:st.bg}),
+      ),
+
+      /* ── Row 2: checkbox + topic name ── */
+      ce('div',{style:{display:'flex',alignItems:'center',gap:10,marginBottom:9}},
+        ce('button',{onClick:toggle,role:'checkbox','aria-checked':done,'aria-label':done?'Mark not started':'Mark studied',style:{width:28,height:28,borderRadius:8,flexShrink:0,border:'none',cursor:'pointer',background:done?C.green:'transparent',outline:'2px solid '+(done?C.green:C.card3),display:'flex',alignItems:'center',justifyContent:'center',transition:'all .18s',animation:done?'pop .22s ease':'none'}},
+          done&&ce(Ic,{n:'check',size:12,color:'#fff',sw:2.5})),
+        ce('span',{style:{fontSize:15,fontWeight:700,color:done?C.text2:C.text,flex:1,lineHeight:1.3,textDecoration:done&&!due?'line-through':'none',textDecorationColor:C.text3}},t.name),
+      ),
+
+      /* ── Row 3: info chips — priority · deadline · revision · resource ── */
+      (t.priority!=='normal'||revChip||dlChip||t.resources||t.notes)&&ce('div',{style:{display:'flex',gap:5,flexWrap:'wrap',alignItems:'center',marginBottom:t.notes?7:10}},
+        t.priority&&t.priority!=='high'?null:t.priority==='high'?ce(Chip,{icon:'star',label:'High',color:pri.color,bg:pri.bg}):null,
+        revChip,
+        dlChip,
+        t.resources&&ce(Chip,{icon:'link',label:'Resource',color:C.blue,href:t.resources,onClick:e=>e.stopPropagation()}),
+      ),
+
+      /* ── Row 4: notes (1 line preview) ── */
+      t.notes&&ce('div',{style:{fontSize:12,color:C.text2,lineHeight:1.4,marginBottom:10,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontStyle:'italic'}},t.notes),
+
+      /* ── Row 5: status buttons ── */
+      ce(StatusRow,{currentStatus:t.status,isRevDue:due,onChange:change,C}),
+    ),
+  );
+});
+
+/* ─── REVISE CARD ────────────────────────────────────────────── */
+const ReviseCard=memo(({t,dark,revDays=7})=>{
+  const C=T(dark);
+  const[leaving,setLeaving]=useState(false);
+  const pri=PRIORITY[t.priority||'normal'];
+  const markDone=useCallback(()=>{if(leaving)return;setLeaving(true);setTimeout(()=>setTopicStatus(t.subjectId,t.chapterId,t.id,'studied'),340);},[t.subjectId,t.chapterId,t.id,leaving]);
+  return ce('article',{'aria-label':t.name,style:{background:C.card,borderRadius:16,marginBottom:10,border:'1px solid '+C.sep,boxShadow:dark?'none':'0 1px 5px rgba(0,0,0,.05)',display:'flex',overflow:'hidden',transition:'opacity .34s ease,transform .34s ease',opacity:leaving?0:1,transform:leaving?'translateX(32px)':'translateX(0)'}},
+    ce('div',{style:{width:5,background:C.red,flexShrink:0}}),
+    ce('div',{style:{flex:1,padding:'14px 14px 14px 15px',minWidth:0}},
+      ce('div',{style:{display:'flex',alignItems:'center',gap:5,marginBottom:8}},
+        ce('div',{style:{width:6,height:6,borderRadius:'50%',background:t.subjectColor,flexShrink:0}}),
+        ce('span',{style:{fontSize:11,color:C.text2,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}},t.subjectName+' \u203a '+t.chapterName),
+        ce(Badge,{label:pri.label,color:pri.color,bg:pri.bg}),
+      ),
+      ce('div',{style:{fontSize:16,fontWeight:700,color:C.text,marginBottom:t.notes?8:12,lineHeight:1.3}},t.name),
+      t.notes&&ce('div',{style:{fontSize:13,color:C.text2,lineHeight:1.5,marginBottom:12,padding:'8px 12px',background:C.card2,borderRadius:10,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}},t.notes),
+      ce('div',{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+        t.studiedDate&&ce('span',{style:{fontSize:12,color:C.text2,display:'flex',alignItems:'center',gap:4}},ce(Ic,{n:'clock',size:12,color:C.text2,sw:1.8}),'Studied '+t.studiedDate),
+        t.resources&&ce('a',{href:t.resources,target:'_blank',rel:'noopener noreferrer',onClick:e=>e.stopPropagation(),style:{display:'flex',alignItems:'center',gap:3,fontSize:12,color:C.blue,fontWeight:600,textDecoration:'none'}},ce(Ic,{n:'link',size:12,color:C.blue,sw:2}),'Resource'),
+        ce('div',{style:{flex:1}}),
+        ce('button',{onClick:markDone,disabled:leaving,'aria-label':'Mark as revised',style:{padding:'10px 18px',background:leaving?C.card3:C.blue,color:leaving?C.text2:'#fff',border:'none',borderRadius:12,fontSize:14,fontWeight:700,cursor:leaving?'default':'pointer',display:'flex',alignItems:'center',gap:6,minHeight:44,transition:'all .2s'}},
+          ce(Ic,{n:'check',size:13,color:leaving?C.text3:'#fff',sw:2.5}),' Revised',
+        ),
+      ),
+    ),
+  );
+});
+
+/* ─── TOPIC EDIT SHEET ───────────────────────────────────────── */
+const TopicEditSheet=memo(({topic,subjectId,chapterId,open,onClose,dark,revDays=7})=>{
+  const C=T(dark);
+  const[form,setForm]=useState(topic||{});
+  useEffect(()=>{if(topic)setForm({...topic});},[topic&&topic.id]);
+  const set=useCallback((k,v)=>setForm(p=>({...p,[k]:v})),[]);
+  const saveAndClose=useCallback(()=>{
+    if(!topic)return onClose();
+    dispatch(st=>({...st,subjects:st.subjects.map(sub=>sub.id!==subjectId?sub:{...sub,chapters:sub.chapters.map(ch=>ch.id!==chapterId?ch:{...ch,topics:ch.topics.map(t=>t.id!==topic.id?t:{...t,...form,studiedDate:form.status==='studied'?(t.studiedDate||toDay()):null})})})}));
+    onClose();
+  },[topic,subjectId,chapterId,form,onClose]);
+  const del=useCallback(()=>{
+    dispatchWithUndo(st=>({...st,subjects:st.subjects.map(sub=>sub.id!==subjectId?sub:{...sub,chapters:sub.chapters.map(ch=>ch.id!==chapterId?ch:{...ch,topics:ch.topics.filter(t=>t.id!==topic.id)})})}),'"'+(topic&&topic.name)+'" deleted');
+    onClose();
+  },[subjectId,chapterId,topic&&topic.id,topic&&topic.name,onClose]);
+  if(!open||!topic)return null;
+  const due=isDue(topic,revDays);
+  const effSt=due&&form.status==='studied'?'do-revision':form.status;
+  return ce(Sheet,{open,onClose:saveAndClose,title:'Edit Topic',C},
+    ce(Fld,{label:'Topic Name',C},ce(Inp,{C,value:form.name||'',onChange:e=>set('name',e.target.value)})),
+    ce(Fld,{label:'Status',C},ce('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+      Object.entries(STATUS).map(([k,v])=>{const a=effSt===k;return ce('button',{key:k,onClick:()=>set('status',k),'aria-pressed':a,style:{padding:'13px 12px',borderRadius:14,cursor:'pointer',fontSize:14,fontWeight:600,minHeight:50,border:'1.5px solid '+(a?v.color:C.sep),background:a?v.color+'18':'transparent',color:a?v.color:C.text2,transition:'all .15s',display:'flex',alignItems:'center',justifyContent:'space-between'}},v.label,a&&ce(Ic,{n:'check',size:14,color:v.color,sw:2.5}));})
+    )),
+    ce(Fld,{label:'Priority',C},ce('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+      Object.entries(PRIORITY).map(([k,v])=>{const a=form.priority===k;return ce('button',{key:k,onClick:()=>set('priority',k),'aria-pressed':a,style:{padding:'13px 16px',borderRadius:14,cursor:'pointer',fontSize:15,fontWeight:500,textAlign:'left',minHeight:50,border:'1.5px solid '+(a?v.color:C.sep),background:a?v.color+'14':'transparent',color:a?v.color:C.text,transition:'all .15s',display:'flex',alignItems:'center',justifyContent:'space-between'}},v.fullLabel,a&&ce(Ic,{n:'check',size:15,color:v.color,sw:2.5}));})
+    )),
+    ce(Fld,{label:'Notes',C},ce('textarea',{value:form.notes||'',onChange:e=>set('notes',e.target.value),rows:4,placeholder:'Key points, formulas, mnemonics\u2026',style:{width:'100%',padding:'14px 16px',borderRadius:14,border:'1.5px solid '+C.sep,fontSize:15,background:C.card2,color:C.text,outline:'none',resize:'none',lineHeight:1.5}})),
+    ce(Fld,{label:'Resource Link',C},
+      ce('div',{style:{position:'relative'}},
+        ce('div',{style:{position:'absolute',left:14,top:'50%',transform:'translateY(-50%)',pointerEvents:'none'}},ce(Ic,{n:'link',size:16,color:C.text2})),
+        ce(Inp,{C,value:form.resources||'',onChange:e=>set('resources',e.target.value),placeholder:'YouTube, PDF, article URL\u2026',inputMode:'url',style:{paddingLeft:40}}),
+      ),
+      form.resources&&ce('a',{href:form.resources,target:'_blank',rel:'noopener noreferrer',style:{display:'inline-flex',alignItems:'center',gap:5,marginTop:8,fontSize:13,color:C.blue}},ce(Ic,{n:'link',size:12,color:C.blue}),'Open resource link'),
+    ),
+    ce(Fld,{label:'Deadline',C},ce(Inp,{C,type:'date',value:form.examDate||'',onChange:e=>set('examDate',e.target.value)})),
+    topic.studiedDate&&ce('div',{style:{background:C.card2,borderRadius:12,padding:'12px 14px',marginBottom:20,display:'flex',alignItems:'center',gap:8}},
+      ce(Ic,{n:'clock',size:14,color:C.text2}),
+      ce('span',{style:{fontSize:13,color:C.text2}},`Studied ${topic.studiedDate} \u00b7 revision due after ${revDays} days`),
+    ),
+    ce('button',{onClick:saveAndClose,style:{width:'100%',padding:16,background:C.blue,color:'#fff',border:'none',borderRadius:16,fontSize:16,fontWeight:700,cursor:'pointer',marginBottom:16,minHeight:52}},'Save Changes'),
+    ce('div',{style:{borderTop:'1px solid '+C.sep,paddingTop:16,display:'flex',alignItems:'center',gap:10}},
+      ce(Ic,{n:'trash',size:16,color:C.red,sw:1.6}),
+      ce('button',{onClick:del,style:{background:'none',border:'none',color:C.red,fontSize:15,fontWeight:600,cursor:'pointer',padding:'4px 0',minHeight:44}},'Delete this topic'),
+    ),
+  );
+});
+
+/* ─── ONBOARDING ─────────────────────────────────────────────── */
+const Onboarding=()=>{
+  const[step,setStep]=useState(0);
+  const[name,setName]=useState('');
+  const[date,setDate]=useState('');
+  const prefersDark=useMemo(()=>!!(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches),[]);
+  const C=prefersDark?TH.dark:TH.light;
+  const valid=[name.trim().length>0,!!date];
+  const next=useCallback(()=>{
+    if(step<1){setStep(1);return;}
+    dispatch(s=>({...s,onboarded:true,profile:{examName:name,examDate:date},settings:{...s.settings,dark:prefersDark}}));
+  },[step,name,date,prefersDark]);
+  const onKey=useCallback(e=>{if(e.key==='Enter'&&valid[step])next();},[valid,step,next]);
+  return ce('div',{style:{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',padding:'40px 28px'},onKeyDown:onKey},
+    ce('div',{style:{width:'100%',maxWidth:380,animation:'fadeUp .3s ease'}},
+      ce('div',{style:{textAlign:'center',marginBottom:44}},
+        ce('div',{style:{fontSize:64,marginBottom:14}},step===0?'\u{1F3AF}':'\u{1F4C5}'),
+        ce('h1',{style:{fontSize:28,fontWeight:800,color:C.text,lineHeight:1.2}},step===0?'Which exam are you preparing for?':'When is your exam?'),
+        ce('div',{style:{display:'flex',gap:6,justifyContent:'center',marginTop:22}},[0,1].map(i=>ce('div',{key:i,style:{height:3,width:i===step?28:8,borderRadius:99,background:i<=step?C.blue:C.sep,transition:'all .3s'}}))),
+      ),
+      ce('div',{style:{marginBottom:24}},
+        step===0?ce(Inp,{C,value:name,onChange:e=>setName(e.target.value),placeholder:'e.g. UPSC, JEE, GMAT\u2026',autoFocus:true})
+               :ce(Inp,{C,type:'date',value:date,onChange:e=>setDate(e.target.value),min:toDay()}),
+      ),
+      ce('button',{onClick:next,disabled:!valid[step],style:{width:'100%',padding:16,background:valid[step]?C.blue:C.card3,color:valid[step]?'#fff':C.text2,border:'none',borderRadius:16,fontSize:17,fontWeight:700,cursor:valid[step]?'pointer':'default',transition:'all .2s',minHeight:52}},step<1?'Continue \u2192':'Get Started'),
+      step>0&&ce('button',{onClick:()=>setStep(0),style:{width:'100%',marginTop:12,padding:12,background:'transparent',border:'none',color:C.text2,fontSize:15,cursor:'pointer',minHeight:44}},'\u2190 Back'),
+    ),
+  );
+};
+
+/* ─── TODAY SCREEN ───────────────────────────────────────────── */
+const TODAY_LIMIT=4;
+const TodaySection=memo(({icon,label,color,topics,dark,revDays})=>{
+  const[showAll,setShowAll]=useState(false);
+  const C=T(dark);
+  const vis=showAll?topics:topics.slice(0,TODAY_LIMIT);
+  const hidden=topics.length-TODAY_LIMIT;
+  return ce('section',{style:{marginBottom:20}},
+    ce('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
+      ce(Ic,{n:icon,size:14,color,sw:2}),
+      ce('span',{style:{fontSize:13,fontWeight:700,color,textTransform:'uppercase',letterSpacing:.6,flex:1}},label),
+      ce('span',{style:{fontSize:13,fontWeight:700,color:C.text2}},topics.length),
+    ),
+    vis.map(t=>ce(TopicRow,{key:t.id,t,accentColor:color,dark,revDays})),
+    !showAll&&hidden>0&&ce('button',{onClick:()=>setShowAll(true),style:{width:'100%',padding:12,cursor:'pointer',background:'transparent',border:'1.5px dashed '+C.sep,borderRadius:14,fontSize:14,fontWeight:600,color:C.text2,minHeight:44,marginTop:2}},'Show '+hidden+' more'),
+    showAll&&topics.length>TODAY_LIMIT&&ce('button',{onClick:()=>setShowAll(false),style:{width:'100%',padding:12,cursor:'pointer',background:'transparent',border:'1.5px dashed '+C.sep,borderRadius:14,fontSize:14,fontWeight:600,color:C.text2,minHeight:44,marginTop:2}},'Show less'),
+  );
+});
+
+const TodayScreen=()=>{
+  const s=useStore();
+  const C=useMemo(()=>T(s.settings.dark),[s.settings.dark]);
+  const dark=s.settings.dark,revDays=s.settings.revDays||7;
+  const all=useMemo(()=>flatAll(s.subjects),[s.subjects]);
+  const dl=useMemo(()=>daysTo(s.profile.examDate),[s.profile.examDate]);
+  const ph=useMemo(()=>phaseOf(dl),[dl]);
+  const over=useMemo(()=>pct(all),[all]);
+  const studied=useMemo(()=>all.filter(t=>t.status==='studied'||t.status==='do-revision').length,[all]);
+  const revDue=useMemo(()=>all.filter(t=>isDue(t,revDays)).sort((a,b)=>(PRI_ORD[b.priority]||2)-(PRI_ORD[a.priority]||2)),[all,revDays]);
+  const studying=useMemo(()=>all.filter(t=>t.status==='studying').sort((a,b)=>(PRI_ORD[b.priority]||2)-(PRI_ORD[a.priority]||2)),[all]);
+  const examPassed=dl!==null&&dl<0;
+  const hasWork=revDue.length>0||studying.length>0;
+  const HDR={position:'sticky',top:0,zIndex:50,background:C.nav,backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',padding:'18px 20px 14px',borderBottom:'1px solid '+C.sep,display:'flex',justifyContent:'space-between',alignItems:'flex-end'};
+  return ce('div',{style:{background:C.bg,minHeight:'100vh',paddingBottom:100}},
+    ce('header',{style:HDR},
+      ce('div',null,
+        ce('h1',{style:{fontSize:26,fontWeight:800,letterSpacing:'-.7px',color:C.text}},'Today'),
+        s.profile.examName&&ce('p',{style:{fontSize:13,color:C.text2,marginTop:2}},s.profile.examName),
+      ),
+      dl!==null&&ce('div',{style:{textAlign:'right'}},
+        examPassed
+          ?ce('div',{style:{fontSize:13,fontWeight:700,color:C.green,background:C.green+'18',padding:'6px 12px',borderRadius:99}},'Exam complete \u{1F393}')
+          :ce(React.Fragment,null,
+              ce('div',{style:{fontSize:28,fontWeight:900,color:ph&&ph.color,lineHeight:1,letterSpacing:'-1px'}},dl===0?'Today!':dl),
+              ce('div',{style:{fontSize:11,color:C.text2,fontWeight:500}},dl===0?'Exam Day':'days left')),
+      ),
+    ),
+    ce('div',{style:{padding:'16px 16px'}},
+      examPassed&&ce('div',{style:{background:C.green+'14',borderRadius:18,padding:18,marginBottom:16,border:'1px solid '+C.green+'28',display:'flex',alignItems:'center',gap:14}},
+        ce('div',{style:{fontSize:34}},'🎓'),
+        ce('div',null,ce('div',{style:{fontSize:16,fontWeight:800,color:C.green,marginBottom:3}},'Exam complete!'),ce('div',{style:{fontSize:14,color:C.text2,lineHeight:1.5}},'You covered '+over+'% of the syllabus.')),
+      ),
+      ph&&!examPassed&&ce('div',{style:{background:ph.color+'14',borderRadius:14,padding:'11px 16px',marginBottom:14,border:'1px solid '+ph.color+'28',display:'flex',alignItems:'center',gap:8}},
+        ce(Ic,{n:'flag',size:14,color:ph.color,sw:1.8}),
+        ce('span',{style:{fontSize:13,fontWeight:700,color:ph.color}},ph.label),
+      ),
+      ce('div',{style:{background:C.card,borderRadius:20,padding:20,marginBottom:14,border:'1px solid '+C.sep,boxShadow:dark?'none':'0 2px 10px rgba(0,0,0,.06)'}},
+        ce('div',{style:{display:'flex',alignItems:'center',gap:18}},
+          ce('div',{style:{position:'relative',flexShrink:0}},
+            ce(Ring,{value:over,size:72,sw:7,color:C.blue}),
+            ce('div',{style:{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}},ce('span',{style:{fontSize:14,fontWeight:900,color:C.blue}},over+'%')),
+          ),
+          ce('div',{style:{flex:1}},
+            ce('div',{style:{fontSize:20,fontWeight:800,color:C.text,letterSpacing:'-.5px'}},over+'% Complete'),
+            ce('p',{style:{fontSize:13,color:C.text2,marginTop:3}},studied+' of '+all.length+' topics'),
+            ce('div',{style:{marginTop:10}},ce(Bar,{value:over,h:6,C,color:C.blue})),
+          ),
+        ),
+      ),
+      ce('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:20}},
+        [{v:revDue.length,l:'Revise Due',c:C.red},{v:studying.length,l:'Studying',c:C.orange},{v:all.filter(t=>t.status==='not-started').length,l:'Remaining',c:C.text2}]
+          .map(m=>ce('div',{key:m.l,style:{background:C.card,borderRadius:16,padding:'14px 8px',textAlign:'center',border:'1px solid '+C.sep}},
+            ce('div',{style:{fontSize:26,fontWeight:900,color:m.c,lineHeight:1}},m.v),
+            ce('div',{style:{fontSize:10,color:C.text2,marginTop:4,fontWeight:600,lineHeight:1.3}},m.l))),
+      ),
+      all.length===0&&ce('div',{style:{textAlign:'center',padding:'48px 0'}},
+        ce(Ic,{n:'book',size:36,color:C.text3,sw:1.4}),
+        ce('p',{style:{fontSize:17,fontWeight:700,color:C.text,marginTop:14}},'No syllabus yet'),
+        ce('p',{style:{fontSize:14,color:C.text2,marginTop:6}},'Go to Syllabus tab \u2192 tap Edit \u2192 add subjects'),
+      ),
+      all.length>0&&!hasWork&&!examPassed&&ce('div',{style:{textAlign:'center',padding:'48px 0'}},
+        ce('div',{style:{width:68,height:68,borderRadius:20,background:C.green+'20',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 18px'}},ce(Ic,{n:'check',size:32,color:C.green,sw:1.8})),
+        ce('p',{style:{fontSize:19,fontWeight:700,color:C.text}},'All caught up!'),
+        ce('p',{style:{fontSize:14,color:C.text2,marginTop:6,lineHeight:1.5}},'Nothing due. Keep studying from the Syllabus tab.'),
+      ),
+      revDue.length>0&&ce(TodaySection,{icon:'clock',label:'Revision Due',color:C.red,topics:revDue,dark,revDays}),
+      studying.length>0&&ce(TodaySection,{icon:'book',label:'In Progress',color:C.orange,topics:studying,dark,revDays}),
+      dl!==null&&!examPassed&&ce('div',{style:{background:(ph&&ph.color)||C.blue,borderRadius:20,padding:22,color:'#fff',marginTop:4}},
+        ce('p',{style:{fontSize:12,opacity:.8,marginBottom:4}},s.profile.examName),
+        ce('div',{style:{fontSize:52,fontWeight:900,lineHeight:1,letterSpacing:'-2px'}},dl===0?'Today!':dl),
+        ce('p',{style:{fontSize:14,opacity:.75,marginTop:4}},dl===0?'Good luck! \u{1F3AF}':'days remaining'),
+        over<70&&dl>0&&dl<30&&ce('p',{style:{marginTop:12,background:'rgba(255,255,255,.18)',borderRadius:12,padding:'11px 14px',fontSize:13,lineHeight:1.5}},(100-over)+'% remaining with '+dl+' days to go!'),
+      ),
+    ),
+  );
+};
+
+/* ─── SYLLABUS SCREEN ────────────────────────────────────────── */
+const SyllabusScreen=()=>{
+  const s=useStore();
+  const C=useMemo(()=>T(s.settings.dark),[s.settings.dark]);
+  const dark=s.settings.dark,revDays=s.settings.revDays||7;
+  const[activeId,setActiveId]=useState(null);
+  const[editMode,setEditMode]=useState(false);
+  const[sortKey,setSortKey]=useState('manual');
+  const[sortSheet,setSortSheet]=useState(false);
+  const[openChs,setOpenChs]=useState({});
+  const[editT,setEditT]=useState(null);
+  const[subSheet,setSubSheet]=useState(false);
+  const[chSheet,setChSheet]=useState(false);
+  const[topicSheet,setTopicSheet]=useState(null);
+  const[newSubName,setNewSubName]=useState('');
+  const[newSubColor,setNewSubColor]=useState(COLORS[0]);
+  const[newChName,setNewChName]=useState('');
+  const[newTopicName,setNewTopicName]=useState('');
+  const[newTopicPri,setNewTopicPri]=useState('normal');
+
+  const activeSub=useMemo(()=>s.subjects.find(x=>x.id===activeId)||s.subjects[0]||null,[s.subjects,activeId]);
+  useEffect(()=>{if(!activeId&&s.subjects.length>0)setActiveId(s.subjects[0].id);},[s.subjects.length]);
+
+  const openSubSheet=useCallback(()=>{setNewSubName('');setNewSubColor(COLORS[0]);setSubSheet(true);},[]);
+
+  const addSubject=useCallback(()=>{
+    if(!newSubName.trim())return;
+    const id=uid();
+    dispatch(st=>({...st,subjects:[...st.subjects,{id,name:newSubName.trim(),color:newSubColor,chapters:[]}]}));
+    setActiveId(id);setNewSubName('');setSubSheet(false);
+  },[newSubName,newSubColor]);
+
+  const addChapter=useCallback(()=>{
+    if(!newChName.trim()||!activeSub)return;
+    const id=uid();
+    dispatch(st=>({...st,subjects:st.subjects.map(sub=>sub.id!==activeSub.id?sub:{...sub,chapters:[...sub.chapters,{id,name:newChName.trim(),topics:[]}]})}));
+    setOpenChs(p=>({...p,[id]:true}));setNewChName('');setChSheet(false);
+  },[newChName,activeSub]);
+
+  const addTopic=useCallback(()=>{
+    if(!newTopicName.trim()||!activeSub||!topicSheet)return;
+    const t={id:uid(),name:newTopicName.trim(),status:'not-started',priority:newTopicPri,examDate:'',notes:'',resources:'',studiedDate:null};
+    dispatch(st=>({...st,subjects:st.subjects.map(sub=>sub.id!==activeSub.id?sub:{...sub,chapters:sub.chapters.map(ch=>ch.id!==topicSheet?ch:{...ch,topics:[...ch.topics,t]})})}));
+    setNewTopicName('');setNewTopicPri('normal');setTopicSheet(null);
+  },[newTopicName,newTopicPri,activeSub,topicSheet]);
+
+  const delSubject=useCallback(id=>{
+    const nm=(_st.subjects.find(x=>x.id===id)||{}).name||'subject';
+    dispatchWithUndo(st=>({...st,subjects:st.subjects.filter(x=>x.id!==id)}),'\"'+nm+'\" deleted');
+    setActiveId(null);
+  },[]);
+  const delChapter=useCallback((sId,cId)=>{
+    const sub=_st.subjects.find(x=>x.id===sId);
+    const nm=(sub&&sub.chapters.find(x=>x.id===cId)||{}).name||'chapter';
+    dispatchWithUndo(st=>({...st,subjects:st.subjects.map(sub=>sub.id!==sId?sub:{...sub,chapters:sub.chapters.filter(c=>c.id!==cId)})}),'\"'+nm+'\" deleted');
+  },[]);
+  const delTopic=useCallback((sId,cId,tId)=>{
+    const sub=_st.subjects.find(x=>x.id===sId);
+    const ch=sub&&sub.chapters.find(x=>x.id===cId);
+    const nm=(ch&&ch.topics.find(x=>x.id===tId)||{}).name||'topic';
+    dispatchWithUndo(st=>({...st,subjects:st.subjects.map(sub=>sub.id!==sId?sub:{...sub,chapters:sub.chapters.map(ch=>ch.id!==cId?ch:{...ch,topics:ch.topics.filter(t=>t.id!==tId)})})}),'\"'+nm+'\" deleted');
+  },[]);
+
+  const activeTopics=useMemo(()=>activeSub?activeSub.chapters.flatMap(c=>c.topics):[],[activeSub]);
+  const sortedChapters=useMemo(()=>{
+    if(!activeSub)return[];
+    if(sortKey==='manual')return activeSub.chapters;
+    const allT=activeSub.chapters.flatMap(ch=>ch.topics.map(t=>({...t,_ch:ch.id})));
+    const sorted=applySort(allT,sortKey);
+    return activeSub.chapters.map(ch=>({...ch,topics:sorted.filter(t=>t._ch===ch.id)}));
+  },[activeSub,sortKey]);
+
+  const sortLabels={manual:'Sort',priority:'Priority',status:'Status',az:'A\u2013Z'};
+  const HDR={position:'sticky',top:0,zIndex:50,background:C.nav,backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)'};
+
+  return ce('div',{style:{background:C.bg,minHeight:'100vh',paddingBottom:100}},
+    ce('header',{style:HDR},
+      /* Top bar */
+      ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'18px 20px 12px'}},
+        ce('h1',{style:{fontSize:26,fontWeight:800,letterSpacing:'-.7px',color:C.text}},'Syllabus'),
+        ce('div',{style:{display:'flex',gap:8,alignItems:'center'}},
+          s.subjects.length>0&&ce('button',{onClick:()=>setSortSheet(true),'aria-label':'Sort topics',style:{display:'flex',alignItems:'center',gap:5,padding:'9px 14px',background:sortKey!=='manual'?C.blue+'18':C.card,border:'1.5px solid '+(sortKey!=='manual'?C.blue:C.sep),borderRadius:99,fontSize:13,fontWeight:sortKey!=='manual'?700:500,color:sortKey!=='manual'?C.blue:C.text2,cursor:'pointer',minHeight:40,whiteSpace:'nowrap'}},
+            ce(Ic,{n:'sort',size:13,color:sortKey!=='manual'?C.blue:C.text2,sw:2}),sortLabels[sortKey]),
+          ce('button',{onClick:()=>setEditMode(v=>!v),'aria-pressed':editMode,style:{display:'flex',alignItems:'center',gap:6,padding:'9px 16px',background:editMode?C.orange+'18':C.card,border:'1.5px solid '+(editMode?C.orange:C.sep),borderRadius:99,fontSize:13,fontWeight:editMode?700:500,color:editMode?C.orange:C.text2,cursor:'pointer',minHeight:40}},
+            ce(Ic,{n:'edit',size:13,color:editMode?C.orange:C.text2,sw:2}),editMode?'Done':'Edit'),
+        ),
+      ),
+      /* Subject tabs — ALWAYS show when editMode=true so user can add first subject */
+      (s.subjects.length>0||editMode)&&ce('div',{style:{position:'relative'}},
+        ce('div',{role:'tablist','aria-label':'Subjects',style:{display:'flex',gap:8,overflowX:'auto',padding:'0 20px 12px'}},
+          s.subjects.map(sub=>{
+            const active=activeSub&&activeSub.id===sub.id;
+            return ce('button',{key:sub.id,onClick:()=>setActiveId(sub.id),role:'tab','aria-selected':active,style:{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:99,flexShrink:0,cursor:'pointer',minHeight:40,border:'1.5px solid '+(active?sub.color:C.sep),background:active?sub.color+'18':C.card,color:active?sub.color:C.text2,fontWeight:active?700:500,fontSize:13,transition:'all .18s'}},
+              ce('div',{style:{width:7,height:7,borderRadius:'50%',background:sub.color,flexShrink:0}}),sub.name,
+              ce('span',{style:{fontSize:10,opacity:.7}},pct(sub.chapters.flatMap(c=>c.topics))+'%'));
+          }),
+          /* + New Subject button — shows whenever editMode is on */
+          editMode&&ce('button',{onClick:openSubSheet,style:{display:'flex',alignItems:'center',gap:5,padding:'8px 16px',borderRadius:99,flexShrink:0,cursor:'pointer',minHeight:40,border:'1.5px solid '+C.blue,background:C.blue+'18',color:C.blue,fontSize:13,fontWeight:600,whiteSpace:'nowrap'}},
+            ce(Ic,{n:'plus',size:14,color:C.blue,sw:2}),'New Subject'),
+        ),
+        ce('div',{'aria-hidden':'true',style:{position:'absolute',right:0,top:0,bottom:'12px',width:36,pointerEvents:'none',background:'linear-gradient(to left,'+(dark?'rgba(0,0,0,.95)':'rgba(255,255,255,.95)')+',transparent)'}}),
+      ),
+      /* Edit mode banner */
+      editMode&&ce('div',{style:{background:C.orange+'14',borderColor:C.orange+'28',borderWidth:'1px 0',borderStyle:'solid',padding:'9px 20px',display:'flex',alignItems:'center',gap:8}},
+        ce(Ic,{n:'edit',size:13,color:C.orange,sw:2}),
+        ce('span',{style:{fontSize:13,fontWeight:600,color:C.orange,flex:1}},'Edit mode \u2014 add subjects, chapters and topics'),
+        ce('button',{onClick:()=>setEditMode(false),style:{background:'none',border:'none',color:C.orange,fontSize:13,fontWeight:700,cursor:'pointer',padding:0,minHeight:36}},'Done'),
+      ),
+      ce('div',{style:{height:1,background:C.sep}}),
+    ),
+
+    ce('main',{style:{padding:'16px 16px'}},
+      /* Empty state — smart: shows Add Subject when editMode is on */
+      s.subjects.length===0?ce('div',{style:{textAlign:'center',padding:'70px 20px'}},
+        ce('div',{style:{width:72,height:72,borderRadius:20,background:C.card,border:'1.5px solid '+C.sep,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 22px'}},ce(Ic,{n:'book',size:32,color:C.text2,sw:1.5})),
+        ce('p',{style:{fontSize:20,fontWeight:700,color:C.text,marginBottom:8}},'No subjects yet'),
+        editMode
+          ?ce('div',null,
+              ce('p',{style:{fontSize:15,color:C.text2,lineHeight:1.5,marginBottom:20}},'Tap \u201cNew Subject\u201d above to get started'),
+              ce('button',{onClick:openSubSheet,style:{display:'inline-flex',alignItems:'center',gap:8,padding:'14px 28px',background:C.blue,color:'#fff',border:'none',borderRadius:14,fontSize:16,fontWeight:600,cursor:'pointer',minHeight:50}},
+                ce(Ic,{n:'plus',size:16,color:'#fff',sw:2}),'Add Your First Subject'),
+            )
+          :ce('div',null,
+              ce('p',{style:{fontSize:15,color:C.text2,lineHeight:1.5,marginBottom:20}},'Tap Edit to start building your syllabus'),
+              ce('button',{onClick:()=>setEditMode(true),style:{padding:'13px 28px',background:C.blue,color:'#fff',border:'none',borderRadius:14,fontSize:16,fontWeight:600,cursor:'pointer',minHeight:50}},'Get Started'),
+            ),
+      )
+
+      :!activeSub?null:ce('div',null,
+        /* Subject progress card */
+        ce('div',{style:{background:C.card,borderRadius:18,padding:18,marginBottom:16,border:'1px solid '+C.sep,boxShadow:dark?'none':'0 2px 8px rgba(0,0,0,.05)'}},
+          ce('div',{style:{display:'flex',alignItems:'center',gap:14}},
+            ce('div',{style:{position:'relative',flexShrink:0}},
+              ce(Ring,{value:pct(activeTopics),color:activeSub.color,size:60,sw:6}),
+              ce('div',{style:{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}},ce('span',{style:{fontSize:13,fontWeight:800,color:activeSub.color}},pct(activeTopics)+'%')),
+            ),
+            ce('div',{style:{flex:1,minWidth:0}},
+              ce('h2',{style:{fontSize:18,fontWeight:800,color:C.text,marginBottom:3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},activeSub.name),
+              ce('p',{style:{fontSize:13,color:C.text2}},activeTopics.filter(t=>t.status==='studied').length+' of '+activeTopics.length+' studied'),
+              ce('div',{style:{marginTop:8}},ce(Bar,{value:pct(activeTopics),color:activeSub.color,h:5,C})),
+            ),
+            editMode&&ce(DelBtn,{onDelete:()=>delSubject(activeSub.id),size:18,label:activeSub.name}),
+          ),
+        ),
+
+        /* No chapters state */
+        sortedChapters.length===0&&ce('div',{style:{textAlign:'center',padding:'36px 0'}},
+          ce('p',{style:{fontSize:15,fontWeight:500,color:C.text,marginBottom:6}},'No chapters yet'),
+          ce('p',{style:{fontSize:13,color:C.text2}},editMode?'Tap \u201cAdd Chapter\u201d below to add your first chapter':'Switch to Edit mode to add chapters'),
+        ),
+
+        /* Chapter cards */
+        sortedChapters.map(ch=>{
+          const open=openChs[ch.id]!==false;
+          const dueInCh=ch.topics.filter(t=>isDue(t,revDays)).length;
+          const studiedInCh=ch.topics.filter(t=>t.status==='studied'||t.status==='do-revision').length;
+          const chPct=pct(ch.topics);
+          return ce('div',{key:ch.id,style:{marginBottom:10}},
+            /* Chapter header — redesigned */
+            ce('button',{onClick:()=>setOpenChs(p=>({...p,[ch.id]:!open})),'aria-expanded':open,style:{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'14px 16px',background:C.card,borderRadius:open?'18px 18px 0 0':'18px',cursor:'pointer',border:'1px solid '+C.sep,boxShadow:dark?'none':'0 2px 6px rgba(0,0,0,.05)',minHeight:56,textAlign:'left'}},
+              /* Color accent bar */
+              ce('div',{style:{width:5,height:32,borderRadius:3,background:activeSub.color,flexShrink:0}}),
+              /* Chapter name + stats */
+              ce('div',{style:{flex:1,minWidth:0}},
+                ce('span',{style:{fontSize:15,fontWeight:700,color:C.text,display:'block',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},ch.name),
+                ce('div',{style:{display:'flex',alignItems:'center',gap:8,marginTop:5}},
+                  ce('div',{style:{flex:1,maxWidth:80}},ce(Bar,{value:chPct,h:3,color:activeSub.color,C})),
+                  ce('span',{style:{fontSize:12,color:C.text2,fontWeight:500,whiteSpace:'nowrap'}},studiedInCh+'/'+ch.topics.length),
+                  dueInCh>0&&ce('span',{style:{fontSize:11,fontWeight:700,color:C.red,background:C.red+'18',padding:'2px 8px',borderRadius:99}},dueInCh+' due'),
+                ),
+              ),
+              editMode&&ce('div',{onClick:e=>e.stopPropagation(),style:{flexShrink:0,marginLeft:4}},ce(DelBtn,{onDelete:()=>delChapter(activeSub.id,ch.id),size:15,label:ch.name})),
+              ce('div',{style:{transform:open?'rotate(180deg)':'none',transition:'transform .22s',display:'flex',flexShrink:0}},ce(Ic,{n:'chevD',size:16,color:C.text2,sw:2})),
+            ),
+            /* Chapter body */
+            open&&ce('div',{style:{background:C.card2,borderRadius:'0 0 18px 18px',padding:'12px 10px 10px',border:'1px solid '+C.sep,borderTop:'none'}},
+              ch.topics.length===0
+                ?ce('p',{style:{fontSize:13,color:C.text2,textAlign:'center',padding:'16px 0'}},editMode?'No topics yet. Tap "Add Topic" below.':'No topics yet.')
+                :ch.topics.map(t=>ce(TopicCard,{key:t.id,topic:t,subjectId:activeSub.id,subjectName:activeSub.name,subjectColor:activeSub.color,chapterId:ch.id,chapterName:ch.name,onTap:()=>setEditT({topic:t,subjectId:activeSub.id,chapterId:ch.id}),onDelete:()=>delTopic(activeSub.id,ch.id,t.id),dark,revDays,editMode,showSubject:false})),
+              editMode&&ce('button',{onClick:()=>{setTopicSheet(ch.id);setNewTopicName('');setNewTopicPri('normal');},style:{width:'100%',padding:14,marginTop:4,cursor:'pointer',background:C.blue+'10',border:'1.5px solid '+C.blue+'40',borderRadius:12,fontSize:14,fontWeight:600,color:C.blue,minHeight:46,display:'flex',alignItems:'center',justifyContent:'center',gap:7}},
+                ce(Ic,{n:'plus',size:15,color:C.blue,sw:2}),'Add Topic to '+ch.name),
+            ),
+          );
+        }),
+
+        /* Add Chapter button — only in editMode */
+        editMode&&ce('button',{onClick:()=>{setChSheet(true);setNewChName('');},style:{width:'100%',marginTop:8,padding:16,cursor:'pointer',background:C.card,border:'1.5px dashed '+C.sep,borderRadius:16,fontSize:14,fontWeight:500,color:C.text2,minHeight:52,display:'flex',alignItems:'center',justifyContent:'center',gap:7}},
+          ce(Ic,{n:'plus',size:15,color:C.text2,sw:2}),'Add Chapter'),
+      ),
+    ),
+
+    /* ── Sheets ── */
+    ce(Sheet,{open:subSheet,onClose:()=>setSubSheet(false),title:'New Subject',C},
+      ce(Fld,{label:'Pick a colour',C},ce('div',{style:{display:'flex',gap:10,flexWrap:'wrap'}},
+        COLORS.map(c=>ce('button',{key:c,onClick:()=>setNewSubColor(c),'aria-pressed':c===newSubColor,'aria-label':'Color '+c,style:{width:48,height:48,borderRadius:'50%',background:c,border:'none',cursor:'pointer',outline:c===newSubColor?'3px solid '+C.text:'3px solid transparent',outlineOffset:2,flexShrink:0,transition:'outline .12s'}}))
+      )),
+      ce(Fld,{label:'Subject Name',C},ce(Inp,{C,value:newSubName,onChange:e=>setNewSubName(e.target.value),placeholder:'e.g. Physics, History, Economics\u2026',onKeyDown:e=>e.key==='Enter'&&addSubject(),autoFocus:true})),
+      ce('button',{onClick:addSubject,disabled:!newSubName.trim(),style:{width:'100%',padding:16,background:newSubName.trim()?C.blue:C.card3,color:newSubName.trim()?'#fff':C.text2,border:'none',borderRadius:16,fontSize:16,fontWeight:700,cursor:'pointer',minHeight:52}},'Add Subject'),
+    ),
+
+    ce(Sheet,{open:chSheet,onClose:()=>setChSheet(false),title:'New Chapter \u2014 '+(activeSub?activeSub.name:''),C},
+      ce(Fld,{label:'Chapter Name',C},ce(Inp,{C,value:newChName,onChange:e=>setNewChName(e.target.value),placeholder:'e.g. Thermodynamics, World War II\u2026',onKeyDown:e=>e.key==='Enter'&&addChapter(),autoFocus:true})),
+      ce('button',{onClick:addChapter,disabled:!newChName.trim(),style:{width:'100%',padding:16,background:newChName.trim()?C.blue:C.card3,color:newChName.trim()?'#fff':C.text2,border:'none',borderRadius:16,fontSize:16,fontWeight:700,cursor:'pointer',minHeight:52}},'Add Chapter'),
+    ),
+
+    ce(Sheet,{open:!!topicSheet,onClose:()=>setTopicSheet(null),title:'New Topic',C},
+      ce(Fld,{label:'Topic Name',C},ce(Inp,{C,value:newTopicName,onChange:e=>setNewTopicName(e.target.value),placeholder:'e.g. Laws of Thermodynamics\u2026',onKeyDown:e=>e.key==='Enter'&&addTopic(),autoFocus:true})),
+      ce(Fld,{label:'Priority',C},ce('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+        Object.entries(PRIORITY).map(([k,v])=>{
+          const a=newTopicPri===k;
+          return ce('button',{key:k,onClick:()=>setNewTopicPri(k),'aria-pressed':a,style:{padding:'13px 16px',borderRadius:14,cursor:'pointer',fontSize:15,fontWeight:500,textAlign:'left',minHeight:50,border:'1.5px solid '+(a?v.color:C.sep),background:a?v.color+'14':'transparent',color:a?v.color:C.text,display:'flex',alignItems:'center',justifyContent:'space-between',transition:'all .15s'}},
+            v.fullLabel,a&&ce(Ic,{n:'check',size:15,color:v.color,sw:2.5}));
+        })
+      )),
+      ce('button',{onClick:addTopic,disabled:!newTopicName.trim(),style:{width:'100%',padding:16,background:newTopicName.trim()?C.blue:C.card3,color:newTopicName.trim()?'#fff':C.text2,border:'none',borderRadius:16,fontSize:16,fontWeight:700,cursor:'pointer',minHeight:52}},'Add Topic'),
+    ),
+
+    ce(Sheet,{open:sortSheet,onClose:()=>setSortSheet(false),title:'Sort Topics',C},
+      ce('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+        [['manual','Custom Order','Original order as added'],['priority','By Priority','High weightage topics first'],['status','By Status','Not started \u2192 Studying \u2192 Revision \u2192 Studied'],['az','A \u2013 Z','Alphabetical order']].map(([k,l,sub])=>{
+          const a=sortKey===k;
+          return ce('button',{key:k,onClick:()=>{setSortKey(k);setSortSheet(false);},'aria-pressed':a,style:{padding:'15px 18px',borderRadius:16,cursor:'pointer',fontSize:15,fontWeight:a?700:500,textAlign:'left',minHeight:60,border:'1.5px solid '+(a?C.blue:C.sep),background:a?C.blue+'12':'transparent',color:a?C.blue:C.text,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}},
+            ce('div',null,ce('div',null,l),ce('div',{style:{fontSize:12,color:a?C.blue:C.text2,marginTop:3,fontWeight:400}},sub)),
+            a&&ce(Ic,{n:'check',size:18,color:C.blue,sw:2.5}),
+          );
+        })
+      ),
+    ),
+
+    editT&&ce(TopicEditSheet,{topic:editT.topic,subjectId:editT.subjectId,chapterId:editT.chapterId,open:!!editT,onClose:()=>setEditT(null),dark,revDays}),
+  );
+};
+
+/* ─── REVISE SCREEN ──────────────────────────────────────────── */
+const ReviseScreen=()=>{
+  const s=useStore();
+  const C=useMemo(()=>T(s.settings.dark),[s.settings.dark]);
+  const dark=s.settings.dark,revDays=s.settings.revDays||7;
+  const all=useMemo(()=>flatAll(s.subjects),[s.subjects]);
+  const due=useMemo(()=>all.filter(t=>isDue(t,revDays)).sort((a,b)=>(PRI_ORD[b.priority]||2)-(PRI_ORD[a.priority]||2)),[all,revDays]);
+  const marked=useMemo(()=>all.filter(t=>t.status==='do-revision'&&!isDue(t,revDays)),[all,revDays]);
+  const HDR={position:'sticky',top:0,zIndex:50,background:C.nav,backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',padding:'18px 20px 14px',borderBottom:'1px solid '+C.sep};
+  return ce('div',{style:{background:C.bg,minHeight:'100vh',paddingBottom:100}},
+    ce('header',{style:HDR},
+      ce('h1',{style:{fontSize:26,fontWeight:800,letterSpacing:'-.7px',color:C.text}},'Revise'),
+      ce('p',{style:{fontSize:13,color:C.text2,marginTop:2}},'Topics needing your attention'),
+    ),
+    ce('main',{style:{padding:'16px 16px'}},
+      due.length===0&&marked.length===0
+        ?ce('div',{style:{textAlign:'center',padding:'90px 0'}},
+            ce('div',{style:{width:68,height:68,borderRadius:20,background:C.green+'20',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 18px'}},ce(Ic,{n:'check',size:30,color:C.green,sw:1.8})),
+            ce('p',{style:{fontSize:19,fontWeight:700,color:C.text}},'All caught up!'),
+            ce('p',{style:{fontSize:14,color:C.text2,marginTop:8,lineHeight:1.6}},'Topics return here after '+revDays+' days\nfor spaced repetition.'))
+        :ce('div',null,
+            due.length>0&&ce('section',null,
+              ce('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
+                ce(Ic,{n:'clock',size:13,color:C.red,sw:2}),
+                ce('h2',{style:{fontSize:12,fontWeight:700,color:C.red,textTransform:'uppercase',letterSpacing:.6}},'Due Now'),
+                ce('span',{style:{fontSize:13,color:C.text2,fontWeight:600,marginLeft:4}},'('+due.length+')'),
+              ),
+              due.map(t=>ce(ReviseCard,{key:t.id,t,dark,revDays})),
+            ),
+            marked.length>0&&ce('section',{style:{marginTop:due.length>0?20:0}},
+              ce('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
+                ce(Ic,{n:'warn',size:13,color:C.orange,sw:2}),
+                ce('h2',{style:{fontSize:12,fontWeight:700,color:C.orange,textTransform:'uppercase',letterSpacing:.6}},'Marked for Revision'),
+                ce('span',{style:{fontSize:13,color:C.text2,fontWeight:600,marginLeft:4}},'('+marked.length+')'),
+              ),
+              marked.map(t=>ce(ReviseCard,{key:t.id,t,dark,revDays})),
+            ),
+          ),
+    ),
+  );
+};
+
+/* ─── STATS SCREEN ───────────────────────────────────────────── */
+const StatsScreen=()=>{
+  const s=useStore();
+  const C=useMemo(()=>T(s.settings.dark),[s.settings.dark]);
+  const dark=s.settings.dark,revDays=s.settings.revDays||7;
+  const all=useMemo(()=>flatAll(s.subjects),[s.subjects]);
+  const over=useMemo(()=>pct(all),[all]);
+  const dl=useMemo(()=>daysTo(s.profile.examDate),[s.profile.examDate]);
+  const ph=dl!==null?phaseOf(dl):null;
+  const examPassed=dl!==null&&dl<0;
+  const counts=useMemo(()=>{
+    const b={'not-started':0,'studying':0,'studied':0,'do-revision':0};
+    all.forEach(t=>{if(isDue(t,revDays))b['do-revision']++;else b[t.status]=(b[t.status]||0)+1;});
+    return b;
+  },[all,revDays]);
+  const HDR={position:'sticky',top:0,zIndex:50,background:C.nav,backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',padding:'18px 20px 14px',borderBottom:'1px solid '+C.sep};
+  return ce('div',{style:{background:C.bg,minHeight:'100vh',paddingBottom:100}},
+    ce('header',{style:HDR},ce('h1',{style:{fontSize:26,fontWeight:800,letterSpacing:'-.7px',color:C.text}},'Stats')),
+    ce('main',{style:{padding:'16px 16px'}},
+      ce('div',{style:{background:C.card,borderRadius:20,padding:22,marginBottom:12,border:'1px solid '+C.sep,boxShadow:dark?'none':'0 2px 10px rgba(0,0,0,.06)',display:'flex',alignItems:'center',gap:20}},
+        ce('div',{style:{position:'relative',flexShrink:0}},
+          ce(Ring,{value:over,size:86,sw:8,color:C.blue}),
+          ce('div',{style:{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}},ce('span',{style:{fontSize:17,fontWeight:900,color:C.blue}},over+'%')),
+        ),
+        ce('div',null,
+          ce('p',{style:{fontSize:13,color:C.text2,fontWeight:500}},'Overall Progress'),
+          ce('div',{style:{fontSize:26,fontWeight:900,color:C.text,letterSpacing:'-1px',marginTop:3}},over+'%'),
+          ce('p',{style:{fontSize:13,color:C.text2,marginTop:3}},all.filter(t=>t.status==='studied').length+' / '+all.length+' topics'),
+        ),
+      ),
+      ce('div',{style:{background:C.card,borderRadius:18,padding:18,marginBottom:12,border:'1px solid '+C.sep}},
+        ce('h2',{style:{fontSize:15,fontWeight:700,color:C.text,marginBottom:16}},'Topic Breakdown'),
+        Object.entries(counts).map(([k,v])=>{
+          const cfg=STATUS[k];const p2=all.length?Math.round(v/all.length*100):0;
+          return ce('div',{key:k,style:{marginBottom:14}},
+            ce('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:5}},
+              ce('div',{style:{display:'flex',alignItems:'center',gap:7}},ce('div',{style:{width:8,height:8,borderRadius:'50%',background:cfg.color}}),ce('span',{style:{fontSize:14,fontWeight:500,color:C.text}},cfg.label)),
+              ce('span',{style:{fontSize:13,color:C.text2,fontWeight:600}},v),
+            ),
+            ce(Bar,{value:p2,color:cfg.color,h:6,C}),
+          );
+        }),
+      ),
+      ce('div',{style:{background:C.card,borderRadius:18,padding:18,marginBottom:12,border:'1px solid '+C.sep}},
+        ce('h2',{style:{fontSize:15,fontWeight:700,color:C.text,marginBottom:16}},'By Subject'),
+        s.subjects.length===0?ce('p',{style:{fontSize:14,color:C.text2}},'No subjects yet.')
+          :s.subjects.map(sub=>{
+              const topics=sub.chapters.flatMap(c=>c.topics);
+              const dueCount=topics.filter(t=>isDue(t,revDays)).length;
+              return ce('div',{key:sub.id,style:{marginBottom:16}},
+                ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:7}},
+                  ce('div',{style:{display:'flex',gap:7,alignItems:'center',minWidth:0,flex:1}},
+                    ce('div',{style:{width:9,height:9,borderRadius:'50%',background:sub.color,flexShrink:0}}),
+                    ce('span',{style:{fontSize:14,fontWeight:700,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},sub.name),
+                  ),
+                  ce('div',{style:{display:'flex',alignItems:'center',gap:8,flexShrink:0,marginLeft:8}},
+                    dueCount>0&&ce('span',{style:{fontSize:11,fontWeight:700,color:C.red,background:C.red+'18',padding:'2px 7px',borderRadius:99}},dueCount+' due'),
+                    ce('span',{style:{fontSize:12,color:C.text2,fontWeight:600}},topics.filter(t=>t.status==='studied').length+'/'+topics.length),
+                  ),
+                ),
+                ce(Bar,{value:pct(topics),color:sub.color,h:7,C}),
+              );
+            }),
+      ),
+      dl!==null&&!examPassed&&ce('div',{style:{background:(ph&&ph.color)||C.blue,borderRadius:20,padding:22,color:'#fff'}},
+        ce('p',{style:{fontSize:12,opacity:.8,marginBottom:4}},s.profile.examName),
+        ce('div',{style:{fontSize:52,fontWeight:900,lineHeight:1,letterSpacing:'-2px'}},dl===0?'Today!':dl),
+        ce('p',{style:{fontSize:14,opacity:.75,marginTop:4}},dl===0?'Good luck!':'days remaining'),
+      ),
+      dl!==null&&examPassed&&ce('div',{style:{background:C.green,borderRadius:20,padding:22,color:'#fff'}},
+        ce('p',{style:{fontSize:26,fontWeight:900,marginBottom:6}},'Exam Complete \u{1F393}'),
+        ce('p',{style:{fontSize:14,opacity:.85}},'You completed '+over+'% for '+s.profile.examName+'.'),
+      ),
+    ),
+  );
+};
+
+/* ─── SETTINGS SCREEN ────────────────────────────────────────── */
+const SettingsScreen=()=>{
+  const s=useStore();
+  const C=useMemo(()=>T(s.settings.dark),[s.settings.dark]);
+  const importRef=useRef();
+  const[editing,setEditing]=useState(false);
+  const[pf,setPf]=useState(()=>s.profile);
+  const[importPending,setImportPending]=useState(null);
+  const[showImportConfirm,setShowImportConfirm]=useState(false);
+  useEffect(()=>{if(!editing)setPf(s.profile);},[s.profile,editing]);
+  const exportData=useCallback(()=>{
+    const blob=new Blob([JSON.stringify(s,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='syllabus_'+toDay()+'.json';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+  },[s]);
+  const importData=useCallback(e=>{
+    const file=e.target.files&&e.target.files[0];if(!file)return;
+    const r=new FileReader();
+    r.onload=ev=>{try{const d=JSON.parse(ev.target.result);if(!validateImport(d))throw new Error('Invalid');setImportPending(d);setShowImportConfirm(true);}catch{alert('Not a valid Syllabus Tracker backup.');}};
+    r.readAsText(file);e.target.value='';
+  },[]);
+  const doImport=useCallback(()=>{
+    if(!importPending)return;
+    dispatch(()=>({...INIT,...importPending,settings:{...INIT.settings,...(importPending.settings||{})}}));
+    setShowImportConfirm(false);setImportPending(null);showToast('Backup restored');
+  },[importPending]);
+  const saveProfile=useCallback(()=>{dispatch(st=>({...st,profile:pf}));setEditing(false);},[pf]);
+  const toggleDark=useCallback(()=>dispatch(st=>({...st,settings:{...st.settings,dark:!st.settings.dark}})),[]);
+  const setRevDays=useCallback(d=>dispatch(st=>({...st,settings:{...st.settings,revDays:d}})),[]);
+  const HDR={position:'sticky',top:0,zIndex:50,background:C.nav,backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',padding:'18px 20px 14px',borderBottom:'1px solid '+C.sep};
+  return ce('div',{style:{background:C.bg,minHeight:'100vh',paddingBottom:100}},
+    ce('header',{style:HDR},ce('h1',{style:{fontSize:26,fontWeight:800,letterSpacing:'-.7px',color:C.text}},'Settings')),
+    ce('main',{style:{padding:'16px 16px'}},
+      ce('div',{style:{background:C.card,borderRadius:18,padding:'18px 20px',marginBottom:12,border:'1px solid '+C.sep}},
+        ce('p',{style:{fontSize:11,fontWeight:700,color:C.text2,letterSpacing:.6,textTransform:'uppercase',marginBottom:14}},'Exam Profile'),
+        editing
+          ?ce('div',null,
+              ce(Fld,{label:'Exam Name',C},ce(Inp,{C,value:pf.examName||'',onChange:e=>setPf(p=>({...p,examName:e.target.value}))})),
+              ce(Fld,{label:'Exam Date',C},ce(Inp,{C,type:'date',value:pf.examDate||'',onChange:e=>setPf(p=>({...p,examDate:e.target.value}))})),
+              ce('div',{style:{display:'flex',gap:10}},
+                ce('button',{onClick:saveProfile,style:{flex:1,padding:14,background:C.blue,color:'#fff',border:'none',borderRadius:14,fontSize:15,fontWeight:600,cursor:'pointer',minHeight:50}},'Save'),
+                ce('button',{onClick:()=>{setPf(s.profile);setEditing(false);},style:{flex:1,padding:14,background:C.card2,color:C.text2,border:'1px solid '+C.sep,borderRadius:14,fontSize:15,cursor:'pointer',minHeight:50}},'Cancel'),
+              ),
+            )
+          :ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+              ce('div',{style:{minWidth:0,flex:1}},
+                ce('div',{style:{fontSize:18,fontWeight:700,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},s.profile.examName||'Not set'),
+                ce('div',{style:{fontSize:14,color:C.text2,marginTop:4}},s.profile.examDate||'No date set'),
+              ),
+              ce('button',{onClick:()=>{setPf(s.profile);setEditing(true);},style:{display:'flex',alignItems:'center',gap:6,padding:'9px 14px',background:C.card2,border:'1px solid '+C.sep,borderRadius:12,fontSize:14,fontWeight:500,color:C.text2,cursor:'pointer',minHeight:44,marginLeft:12,flexShrink:0}},
+                ce(Ic,{n:'edit',size:14,color:C.text2}),' Edit'),
+            ),
+      ),
+      ce('div',{style:{background:C.card,borderRadius:18,padding:'0 20px',marginBottom:12,border:'1px solid '+C.sep}},
+        ce(SRow,{icon:s.settings.dark?'sun':'moon',label:s.settings.dark?'Light Mode':'Dark Mode',sub:'Currently '+(s.settings.dark?'dark':'light'),C,right:ce(DarkToggle,{on:s.settings.dark,C,onClick:toggleDark})}),
+        ce(SRow,{icon:'download',label:'Export Backup',sub:'Save all data as JSON',onClick:exportData,C}),
+        ce('div',{onClick:()=>importRef.current&&importRef.current.click(),style:{display:'flex',alignItems:'center',gap:14,padding:'16px 0',cursor:'pointer',minHeight:60}},
+          ce('div',{style:{width:36,height:36,borderRadius:10,background:C.card2,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}},ce(Ic,{n:'upload',size:18,color:C.text2,sw:1.6})),
+          ce('div',{style:{flex:1}},ce('div',{style:{fontSize:16,fontWeight:500,color:C.text}},'Import Backup'),ce('div',{style:{fontSize:13,color:C.text2,marginTop:2}},'Restore from a JSON file')),
+          ce(Ic,{n:'chevR',size:16,color:C.text3,sw:2}),
+        ),
+        ce('input',{ref:importRef,type:'file',accept:'.json',style:{display:'none'},onChange:importData}),
+      ),
+      ce('div',{style:{background:C.card,borderRadius:18,padding:'18px 20px',marginBottom:12,border:'1px solid '+C.sep}},
+        ce('div',{style:{display:'flex',alignItems:'center',gap:10,marginBottom:14}},
+          ce('div',{style:{width:36,height:36,borderRadius:10,background:C.blue+'18',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}},ce(Ic,{n:'repeat',size:18,color:C.blue,sw:1.6})),
+          ce('div',null,
+            ce('div',{style:{fontSize:16,fontWeight:600,color:C.text}},'Revision Interval'),
+            ce('div',{style:{fontSize:13,color:C.text2,marginTop:2}},'Days before a studied topic needs revision'),
+          ),
+        ),
+        ce('div',{role:'group','aria-label':'Revision interval',style:{display:'flex',gap:8,flexWrap:'wrap'}},
+          REV_OPTIONS.map(o=>{
+            const a=(s.settings.revDays||7)===o.days;
+            return ce('button',{key:o.days,onClick:()=>setRevDays(o.days),'aria-pressed':a,style:{padding:'10px 18px',borderRadius:99,fontSize:14,fontWeight:600,cursor:'pointer',border:'1.5px solid '+(a?C.blue:C.sep),background:a?C.blue+'18':C.card2,color:a?C.blue:C.text2,minHeight:44,transition:'all .15s'}},o.label);
+          }),
+        ),
+      ),
+      ce('div',{style:{background:C.card,borderRadius:18,padding:'0 20px',border:'1px solid '+C.sep,marginBottom:22}},
+        ce('div',{style:{padding:'16px 0',display:'flex',alignItems:'center',gap:14,minHeight:60}},
+          ce('div',{style:{width:36,height:36,borderRadius:10,background:C.red+'18',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}},ce(Ic,{n:'trash',size:18,color:C.red,sw:1.6})),
+          ce('span',{style:{fontSize:16,fontWeight:500,color:C.red,flex:1}},'Reset All Data'),
+          ce(DelBtn,{onDelete:()=>dispatch(()=>({...INIT,onboarded:true,profile:s.profile})),size:16,label:'all data'}),
+        ),
+      ),
+      ce('p',{style:{fontSize:13,color:C.text2,textAlign:'center',lineHeight:1.8}},'All data stored locally on your device.\nNo accounts, no tracking, no ads.'),
+    ),
+    ce(ConfirmModal,{open:showImportConfirm,title:'Replace all data?',msg:'This will replace all your subjects, topics and progress with the backup file.',onConfirm:doImport,onCancel:()=>{setShowImportConfirm(false);setImportPending(null);},C,confirmLabel:'Yes, import',danger:true}),
+  );
+};
+
+/* ─── APP ────────────────────────────────────────────────────── */
+const NAV=[
+  {id:'today',   icon:'home',   label:'Today'},
+  {id:'syllabus',icon:'book',   label:'Syllabus'},
+  {id:'revise',  icon:'refresh',label:'Revise'},
+  {id:'stats',   icon:'chart',  label:'Stats'},
+  {id:'settings',icon:'cog',    label:'Settings'},
+];
+const SCREENS={today:TodayScreen,syllabus:SyllabusScreen,revise:ReviseScreen,stats:StatsScreen,settings:SettingsScreen};
+
+function App(){
+  const s=useStore();
+  const C=useMemo(()=>T(s.settings.dark),[s.settings.dark]);
+  const[tab,setTab]=useState('today');
+
+  /* Auto-promote studied→do-revision on mount and hourly */
+  const promote=useCallback(()=>{
+    const rd=(_st.settings&&_st.settings.revDays)||7;
+    if(!flatAll(_st.subjects).some(t=>isDue(t,rd)&&t.status==='studied'))return;
+    dispatch(st=>({...st,subjects:st.subjects.map(sub=>({...sub,chapters:sub.chapters.map(ch=>({...ch,topics:ch.topics.map(t=>isDue(t,rd)&&t.status==='studied'?{...t,status:'do-revision'}:t)}))}))}));
+  },[]);
+  useEffect(()=>{promote();const iv=setInterval(promote,60*60*1000);return()=>clearInterval(iv);},[promote]);
+
+  /* Revise badge = due + manually marked */
+  const revCount=useMemo(()=>{
+    const rd=(s.settings&&s.settings.revDays)||7;
+    return flatAll(s.subjects).filter(t=>isDue(t,rd)||t.status==='do-revision').length;
+  },[s.subjects,s.settings&&s.settings.revDays]);
+
+  if(!s.onboarded)return ce(React.Fragment,null,ce(G),ce(Onboarding));
+  const Screen=SCREENS[tab]||TodayScreen;
+  return ce(React.Fragment,null,
+    ce(G),
+    ce('div',{style:{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:C.bg}},
+      ce('div',{key:tab,style:{animation:'fadeUp .18s ease'}},ce(Screen)),
+      ce('nav',{'aria-label':'Main navigation',style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:430,background:C.nav,backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',borderTop:'1px solid '+C.sep,display:'flex',padding:'10px 0',zIndex:200,paddingBottom:'calc(10px + env(safe-area-inset-bottom,0px))'}},
+        NAV.map(item=>{
+          const active=tab===item.id;
+          return ce('button',{key:item.id,onClick:()=>setTab(item.id),'aria-label':item.label,'aria-current':active?'page':undefined,style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4,background:'none',border:'none',cursor:'pointer',padding:'4px 0',position:'relative',minHeight:52}},
+            ce('div',{style:{width:34,height:34,borderRadius:11,background:active?C.blue+'18':'transparent',display:'flex',alignItems:'center',justifyContent:'center',transition:'background .18s'}},
+              ce(Ic,{n:item.icon,size:21,color:active?C.blue:C.text2,sw:active?2.2:1.6})),
+            item.id==='revise'&&revCount>0&&ce('div',{'aria-label':revCount+' topics to revise',style:{position:'absolute',top:0,left:'calc(50% + 6px)',minWidth:18,height:18,padding:'0 4px',background:C.red,borderRadius:99,fontSize:10,fontWeight:800,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',border:'2px solid '+C.bg}},revCount>99?'99+':revCount),
+            ce('span',{style:{fontSize:10,fontWeight:active?700:400,color:active?C.blue:C.text2,transition:'color .18s'}},item.label),
+          );
+        }),
+      ),
+      ce(Toast),
+      ce(DelConfirmOverlay),
+    ),
+  );
+}
+
+const _root=ReactDOM.createRoot(document.getElementById('root'));
+_root.render(ce(App));
+requestAnimationFrame(()=>requestAnimationFrame(()=>{const sp=document.getElementById('splash');if(sp){sp.classList.add('out');setTimeout(()=>sp.remove(),350);}}));
+</script>
+</body>
+</html>
