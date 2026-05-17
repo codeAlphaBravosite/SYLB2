@@ -732,7 +732,7 @@ const SyllabusScreen=()=>{
     if(!newChName.trim()||!activeSub)return;
     const id=uid();
     dispatch(st=>({...st,subjects:st.subjects.map(sub=>sub.id!==activeSub.id?sub:{...sub,chapters:[...sub.chapters,{id,name:newChName.trim(),topics:[]}]})}));
-    setOpenChs(p=>({...p,[id]:true}));setNewChName('');setChSheet(false);
+    setNewChName('');setChSheet(false);
   },[newChName,activeSub]);
 
   const addTopic=useCallback(()=>{
@@ -849,7 +849,7 @@ const SyllabusScreen=()=>{
 
         /* Chapter cards */
         sortedChapters.map(ch=>{
-          const open=openChs[ch.id]!==false;
+          const open=openChs[ch.id]===true;
           const dueInCh=ch.topics.filter(t=>isDue(t,revDays)).length;
           const studiedInCh=ch.topics.filter(t=>t.status==='studied'||t.status==='do-revision').length;
           const chPct=pct(ch.topics);
