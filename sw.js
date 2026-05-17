@@ -1,5 +1,5 @@
 /* Fixed sw.js — Fix #30: cache name MUST change with each deploy */
-const CACHE_NAME = "syllabus-tracker-v7";
+const CACHE_NAME = "syllabus-tracker-v8";
 
 const PRECACHE = [
   "./",
