@@ -705,7 +705,7 @@ const SyllabusScreen=()=>{
   const[editMode,setEditMode]=useState(false);
   const[sortKey,setSortKey]=useState('manual');
   const[sortSheet,setSortSheet]=useState(false);
-  const[openChs,setOpenChs]=useState({});
+  const[openChs,setOpenChs]=useState(()=>{try{return JSON.parse(localStorage.getItem('st_openChs')||'{}');}catch{return{};}});
   const[editT,setEditT]=useState(null);
   const[subSheet,setSubSheet]=useState(false);
   const[chSheet,setChSheet]=useState(false);
@@ -855,7 +855,7 @@ const SyllabusScreen=()=>{
           const chPct=pct(ch.topics);
           return ce('div',{key:ch.id,style:{marginBottom:10}},
             /* Chapter header — redesigned */
-            ce('button',{onClick:()=>setOpenChs(p=>({...p,[ch.id]:!open})),'aria-expanded':open,style:{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'14px 16px',background:C.card,borderRadius:open?'18px 18px 0 0':'18px',cursor:'pointer',border:'1px solid '+C.sep,boxShadow:dark?'none':'0 2px 6px rgba(0,0,0,.05)',minHeight:56,textAlign:'left'}},
+            ce('button',{onClick:()=>setOpenChs(p=>{const n={...p,[ch.id]:!open};try{localStorage.setItem('st_openChs',JSON.stringify(n));}catch{}return n;}),'aria-expanded':open,style:{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'14px 16px',background:C.card,borderRadius:open?'18px 18px 0 0':'18px',cursor:'pointer',border:'1px solid '+C.sep,boxShadow:dark?'none':'0 2px 6px rgba(0,0,0,.05)',minHeight:56,textAlign:'left'}},
               /* Color accent bar */
               ce('div',{style:{width:5,height:32,borderRadius:3,background:activeSub.color,flexShrink:0}}),
               /* Chapter name + stats */
